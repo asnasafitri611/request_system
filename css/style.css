@@ -31,7 +31,7 @@ body {
     top: 0;
     height: 100vh;
     width: var(--sidebar-width);
-    background: linear-gradient(180deg, #064e3b 0%, #065f46 100%);
+    background: linear-gradient(180deg, #064e3b 0%, #065f46     100%);
     color: white;
     z-index: 1000;
     transition: var(--transition);
@@ -501,7 +501,7 @@ body.dark-mode .card,
 body.dark-mode .navbar,
 body.dark-mode .stat-card {
     background: #1e293b;
-    color: #e2e8f0;
+    color: #575b61;
 }
 
 body.dark-mode .data-table th { background: #334155; color: #94a3b8; }
