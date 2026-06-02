@@ -51,11 +51,11 @@ if (isset($_POST['edit_user'])) {
     
     if (!empty($_POST['password'])) {
         $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("UPDATE users SET nama=?, email=?, role=?, divisi_id=?, jabatan_id=?, password=?, status=? WHERE id=?");
-        $stmt->bind_param("sssiiiss", $nama, $email, $role, $divisi_id, $jabatan_id, $password, $status, $id);
+        $stmt = $conn->prepare("UPDATE users SET nama=?, email=?, role=?, divisi_id=?, jabatan_id=?, password=? WHERE id=?");
+        $stmt->bind_param("sssiiss", $nama, $email, $role, $divisi_id, $jabatan_id, $password, $status, $id);
     } else {
         $stmt = $conn->prepare("UPDATE users SET nama=?, email=?, role=?, divisi_id=?, jabatan_id=?, status=? WHERE id=?");
-        $stmt->bind_param("sssiiis", $nama, $email, $role, $divisi_id, $jabatan_id, $status, $id);
+        $stmt->bind_param("sssiisi", $nama, $email, $role, $divisi_id, $jabatan_id, $status, $id);
     }
     $stmt->execute();
     header("Location: dashboard-admin.php?page=users");
@@ -949,15 +949,6 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
             <div class="nav-right">
                 <div class="nav-icon" onclick="toggleDarkMode()">
                     <i class="fas fa-moon"></i>
-                </div>
-                <div class="nav-icon" onclick="openModal('notifModal')">
-                    <i class="fas fa-bell"></i>
-                    <?php if ($notifCount > 0): ?>
-                        <span class="notif-count"><?= $notifCount ?></span>
-                    <?php endif; ?>
-                </div>
-                <div class="nav-icon">
-                    <i class="fas fa-user-circle"></i>
                 </div>
             </div>
         </div>

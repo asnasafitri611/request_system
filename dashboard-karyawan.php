@@ -203,15 +203,7 @@ $notifCount = getUnreadNotifCount($conn, $_SESSION['user_id']);
                 <div class="nav-icon" onclick="toggleDarkMode()">
                     <i class="fas fa-moon"></i>
                 </div>
-                <div class="nav-icon" onclick="openModal('notifModal')">
-                    <i class="fas fa-bell"></i>
-                    <?php if ($notifCount > 0): ?>
-                        <span class="notif-count"><?= $notifCount ?></span>
-                    <?php endif; ?>
-                </div>
-                <div class="nav-icon">
-                    <i class="fas fa-user-circle"></i>
-                </div>
+                
             </div>
         </div>
 
@@ -419,8 +411,6 @@ $notifCount = getUnreadNotifCount($conn, $_SESSION['user_id']);
                     <div class="stat-card">
                         <div class="stat-icon blue"><i class="fas fa-check"></i></div>
                         <div class="stat-info">
-                            <h3><?= $latestKpi ? $latestKpi['realisasi'] : '-' ?></h3>
-                            <p>Realisasi</p>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -452,6 +442,64 @@ $notifCount = getUnreadNotifCount($conn, $_SESSION['user_id']);
                     $scores[] = $row['nilai'];
                 }
                 ?>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Riwayat Penilaian KPI</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Periode</th>
+                                    <th>Target</th>
+                                    <th>Nilai</th>
+                                    <th>Keterangan</th>
+                                    <th>Tanggal Penilaian</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $stmt = $conn->prepare("SELECT * FROM kpi WHERE user_id=? ORDER BY created_at DESC");
+                                $stmt->bind_param("i", $_SESSION['user_id']);
+                                $stmt->execute();
+                                $kpiHistory = $stmt->get_result();
+                                if ($kpiHistory->num_rows == 0):
+                                ?>
+                                <tr>
+                                    <td colspan="6" style="text-align:center;padding:20px">Belum ada data penilaian KPI</td>
+                                </tr>
+                                <?php else: ?>
+                                    <?php while ($row = $kpiHistory->fetch_assoc()): 
+                                        $nilai = floatval($row['nilai']);
+                                        if ($nilai >= 90) {
+                                            $ketClass = 'badge-success';
+                                            $ket = 'Sangat Baik';
+                                        } elseif ($nilai >= 75) {
+                                            $ketClass = 'badge-primary';
+                                            $ket = 'Baik';
+                                        } elseif ($nilai >= 60) {
+                                            $ketClass = 'badge-warning';
+                                            $ket = 'Cukup';
+                                        } else {
+                                            $ketClass = 'badge-danger';
+                                            $ket = 'Kurang';
+                                        }
+                                    ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($row['periode']) ?></td>
+                                        <td><?= htmlspecialchars($row['target']) ?></td>
+                                        <td><strong><?= $row['nilai'] ?></strong></td>
+                                        <td><span class="badge <?= $ketClass ?>"><?= $ket ?></span></td>
+                                        <td><?= date('d/m/Y', strtotime($row['created_at'])) ?></td>
+                                    </tr>
+                                    <?php endwhile; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
 
             <?php elseif ($page == 'profile'): ?>
                 <h1 class="page-title">Profile</h1>

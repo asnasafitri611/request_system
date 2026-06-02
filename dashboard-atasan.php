@@ -212,15 +212,6 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 <div class="nav-icon" onclick="toggleDarkMode()">
                     <i class="fas fa-moon"></i>
                 </div>
-                <div class="nav-icon" onclick="openModal('notifModal')">
-                    <i class="fas fa-bell"></i>
-                    <?php if ($notifCount > 0): ?>
-                        <span class="notif-count"><?= $notifCount ?></span>
-                    <?php endif; ?>
-                </div>
-                <div class="nav-icon">
-                    <i class="fas fa-user-circle"></i>
-                </div>
             </div>
         </div>
 
@@ -410,10 +401,6 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                             <input type="number" step="0.01" name="target" class="form-control" required>
                         </div>
                         <div class="form-group">
-                            <label>Realisasi (%)</label>
-                            <input type="number" step="0.01" name="realisasi" class="form-control" required>
-                        </div>
-                        <div class="form-group">
                             <label>Nilai</label>
                             <input type="number" step="0.01" name="nilai" class="form-control" required>
                         </div>
@@ -438,7 +425,6 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                                     <th>Karyawan</th>
                                     <th>Periode</th>
                                     <th>Target</th>
-                                    <th>Realisasi</th>
                                     <th>Nilai</th>
                                     <th>Komentar</th>
                                 </tr>
@@ -449,7 +435,6 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                                     <td><?= htmlspecialchars($row['nama']) ?></td>
                                     <td><?= htmlspecialchars($row['periode']) ?></td>
                                     <td><?= $row['target'] ?>%</td>
-                                    <td><?= $row['realisasi'] ?>%</td>
                                     <td><span class="badge badge-<?= $row['nilai']>=80?'success':($row['nilai']>=60?'warning':'danger') ?>"><?= $row['nilai'] ?></span></td>
                                     <td><?= htmlspecialchars($row['komentar'] ?? '-') ?></td>
                                 </tr>
@@ -458,6 +443,68 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                         </table>
                     </div>
                 </div>
+
+                <!-- HISTORY PENILAIAN KPI -->
+                <div class="card" style="margin-top: 25px;">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fas fa-history"></i> History Penilaian KPI</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="historyKpiTable">
+                            <thead>
+                                <tr>
+                                    <th>No</th>
+                                    <th>Karyawan</th>
+                                    <th>Periode</th>
+                                    <th>Target</th>
+                                    <th>Nilai</th>
+                                    <th>Komentar</th>
+                                    <th>Dinilai Oleh</th>
+                                    <th>Tanggal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $historyKpiQuery = "SELECT k.*, u.nama as karyawan_nama, a.nama as atasan_nama 
+                                                   FROM kpi k 
+                                                   JOIN users u ON k.user_id = u.id 
+                                                   LEFT JOIN users a ON k.created_by = a.id 
+                                                   ORDER BY k.created_at DESC";
+                                $historyKpiResult = $conn->query($historyKpiQuery);
+                                $no = 1;
+                                if ($historyKpiResult && $historyKpiResult->num_rows > 0):
+                                    while ($row = $historyKpiResult->fetch_assoc()):
+                                ?>
+                                <tr>
+                                    <td><?= $no++ ?></td>
+                                    <td><?= htmlspecialchars($row['karyawan_nama']) ?></td>
+                                    <td><?= htmlspecialchars($row['periode']) ?></td>
+                                    <td><?= $row['target'] ?>%</td>
+                                    <td>
+                                        <span class="badge badge-<?= $row['nilai']>=80?'success':($row['nilai']>=60?'warning':'danger') ?>">
+                                            <?= $row['nilai'] ?>
+                                        </span>
+                                    </td>
+                                    <td><?= htmlspecialchars($row['komentar'] ?? '-') ?></td>
+                                    <td><?= htmlspecialchars($row['atasan_nama'] ?? 'System') ?></td>
+                                    <td><?= date('d/m/Y H:i', strtotime($row['created_at'])) ?></td>
+                                </tr>
+                                <?php 
+                                    endwhile;
+                                else:
+                                ?>
+                                <tr>
+                                    <td colspan="9" style="text-align: center; padding: 20px; color: #6b7280;">
+                                        <i class="fas fa-inbox" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
+                                        Belum ada history penilaian KPI
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- END HISTORY PENILAIAN KPI -->
 
             <?php elseif ($page == 'profile'): ?>
                 <h1 class="page-title">Profile Atasan</h1>
