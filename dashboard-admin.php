@@ -13,7 +13,10 @@ $totalAtasan = $conn->query("SELECT COUNT(*) as total FROM users WHERE role='ata
 $totalRequests = $conn->query("SELECT COUNT(*) as total FROM request_system")->fetch_assoc()['total'];
 $totalUsersAktif = $conn->query("SELECT COUNT(*) as total FROM users WHERE status='aktif'")->fetch_assoc()['total'];
 $totalUsersTidakAktif = $conn->query("SELECT COUNT(*) as total FROM users WHERE status='tidak_aktif'")->fetch_assoc()['total'];
-
+// Stats Atasan & Karyawan
+$totalAtasanAktif = $conn->query("SELECT COUNT(*) as total FROM users WHERE role='atasan' AND status='aktif'")->fetch_assoc()['total'];
+$totalKaryawanTanpaAtasan = $conn->query("SELECT COUNT(*) as total FROM users WHERE role='karyawan' AND status='aktif' AND (atasan_id IS NULL OR atasan_id = 0)")->fetch_assoc()['total'];
+$totalKaryawanDenganAtasan = $conn->query("SELECT COUNT(*) as total FROM users WHERE role='karyawan' AND status='aktif' AND atasan_id IS NOT NULL AND atasan_id > 0")->fetch_assoc()['total'];
 // All Users
 $usersResult = $conn->query("SELECT u.*, d.nama_divisi, j.nama_jabatan FROM users u LEFT JOIN divisi d ON u.divisi_id=d.id LEFT JOIN jabatan j ON u.jabatan_id=j.id ORDER BY u.status ASC, u.created_at DESC");
 
@@ -83,7 +86,56 @@ if (isset($_GET['aktifkan_user'])) {
     header("Location: dashboard-admin.php?page=users");
     exit;
 }
+// ============================================
+// HANDLE MANAJEMEN ATASAN
+// ============================================
 
+// Assign karyawan ke atasan
+if (isset($_POST['assign_karyawan'])) {
+    $karyawanId = (int) $_POST['karyawan_id'];
+    $atasanId = (int) $_POST['atasan_id'];
+    
+    $stmt = $conn->prepare("UPDATE users SET atasan_id = ? WHERE id = ? AND role = 'karyawan'");
+    $stmt->bind_param("ii", $atasanId, $karyawanId);
+    $stmt->execute();
+    
+    // Notifikasi ke atasan
+    $stmt = $conn->prepare("SELECT nama FROM users WHERE id = ?");
+    $stmt->bind_param("i", $karyawanId);
+    $stmt->execute();
+    $karyawan = $stmt->get_result()->fetch_assoc();
+    
+    addNotification($conn, $atasanId, 'Karyawan Baru', $karyawan['nama'] . ' telah ditugaskan sebagai karyawan Anda');
+    
+    header("Location: dashboard-admin.php?page=manajemen-atasan&success=assigned");
+    exit;
+}
+
+// Hapus karyawan dari atasan (reset atasan_id)
+if (isset($_GET['hapus_bawahan']) && isset($_GET['atasan_id'])) {
+    $karyawanId = (int) $_GET['hapus_bawahan'];
+    $atasanId = (int) $_GET['atasan_id'];
+    
+    $stmt = $conn->prepare("UPDATE users SET atasan_id = NULL WHERE id = ? AND atasan_id = ?");
+    $stmt->bind_param("ii", $karyawanId, $atasanId);
+    $stmt->execute();
+    
+    header("Location: dashboard-admin.php?page=manajemen-atasan&success=removed");
+    exit;
+}
+
+// Pindah karyawan ke atasan lain
+if (isset($_POST['pindah_karyawan'])) {
+    $karyawanId = (int) $_POST['karyawan_id'];
+    $atasanIdBaru = (int) $_POST['atasan_id_baru'];
+    
+    $stmt = $conn->prepare("UPDATE users SET atasan_id = ? WHERE id = ? AND role = 'karyawan'");
+    $stmt->bind_param("ii", $atasanIdBaru, $karyawanId);
+    $stmt->execute();
+    
+    header("Location: dashboard-admin.php?page=manajemen-atasan&success=moved");
+    exit;
+}
 $divisiList = $conn->query("SELECT * FROM divisi");
 $jabatanList = $conn->query("SELECT * FROM jabatan");
 
@@ -915,6 +967,10 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                 <i class="fas fa-users-cog"></i>
                 <span>Manajemen User</span>
             </a>
+            <a href="?page=manajemen-atasan" class="nav-item <?= $page=='manajemen-atasan'?'active':'' ?>">
+    <i class="fas fa-sitemap"></i>
+    <span>Manajemen Atasan</span>
+</a>
             <a href="?page=karyawan" class="nav-item <?= $page=='karyawan'?'active':'' ?>">
                 <i class="fas fa-users"></i>
                 <span>Data Karyawan</span>
@@ -1409,6 +1465,247 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                 </script>
 
             <?php elseif ($page == 'profile'): ?>
+                <?php elseif ($page == 'manajemen-atasan'): ?>
+    <h1 class="page-title">Manajemen Atasan</h1>
+    <p class="page-subtitle">Atur karyawan bawahan untuk setiap atasan</p>
+
+    <?php if (isset($_GET['success'])): ?>
+        <div style="background:#d1fae5;color:#065f46;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #10b981">
+            <i class="fas fa-check-circle"></i> 
+            <?php 
+            switch($_GET['success']) {
+                case 'assigned': echo 'Karyawan berhasil ditugaskan ke atasan!'; break;
+                case 'removed': echo 'Karyawan berhasil dihapus dari daftar bawahan!'; break;
+                case 'moved': echo 'Karyawan berhasil dipindahkan ke atasan lain!'; break;
+                default: echo 'Operasi berhasil!';
+            }
+            ?>
+        </div>
+    <?php endif; ?>
+
+    <div class="stats-grid" style="margin-bottom:20px">
+        <div class="stat-card">
+            <div class="stat-icon blue"><i class="fas fa-user-shield"></i></div>
+            <div class="stat-info">
+                <h3><?= $totalAtasanAktif ?></h3>
+                <p>Total Atasan Aktif</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon green"><i class="fas fa-user-check"></i></div>
+            <div class="stat-info">
+                <h3><?= $totalKaryawanDenganAtasan ?></h3>
+                <p>Karyawan Punya Atasan</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon orange"><i class="fas fa-user-plus"></i></div>
+            <div class="stat-info">
+                <h3><?= $totalKaryawanTanpaAtasan ?></h3>
+                <p>Karyawan Belum Punya Atasan</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- FORM ASSIGN KARYAWAN -->
+    <div class="card" style="margin-bottom:25px">
+        <div class="card-header">
+            <span class="card-title"><i class="fas fa-user-plus"></i> Assign Karyawan ke Atasan</span>
+        </div>
+        <form method="POST" style="padding:20px">
+            <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:15px;align-items:end">
+                <div>
+                    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Pilih Atasan</label>
+                    <select name="atasan_id" class="form-control" required style="width:100%">
+                        <option value="">-- Pilih Atasan --</option>
+                        <?php 
+                        $atasanList = getDaftarAtasan($conn);
+                        while ($a = $atasanList->fetch_assoc()): 
+                        ?>
+                        <option value="<?= $a['id'] ?>">
+                            <?= htmlspecialchars($a['nama']) ?> 
+                            (<?= htmlspecialchars($a['nama_jabatan'] ?? '-') ?> - <?= htmlspecialchars($a['nama_divisi'] ?? '-') ?>)
+                        </option>
+                        <?php endwhile; ?>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Pilih Karyawan</label>
+                    <select name="karyawan_id" class="form-control" required style="width:100%">
+                        <option value="">-- Pilih Karyawan --</option>
+                        <optgroup label="Karyawan Belum Punya Atasan">
+                            <?php 
+                            $karyawanFree = getKaryawanTanpaAtasan($conn);
+                            while ($k = $karyawanFree->fetch_assoc()): 
+                            ?>
+                            <option value="<?= $k['id'] ?>">
+                                <?= htmlspecialchars($k['nama']) ?> 
+                                (<?= htmlspecialchars($k['nama_jabatan'] ?? '-') ?>)
+                            </option>
+                            <?php endwhile; ?>
+                        </optgroup>
+                        <optgroup label="Karyawan Sudah Punya Atasan (Pindah)">
+                            <?php 
+                            $karyawanAssigned = $conn->query("SELECT u.*, d.nama_divisi, j.nama_jabatan, a.nama as nama_atasan 
+                                FROM users u 
+                                LEFT JOIN divisi d ON u.divisi_id = d.id 
+                                LEFT JOIN jabatan j ON u.jabatan_id = j.id 
+                                LEFT JOIN users a ON u.atasan_id = a.id 
+                                WHERE u.role = 'karyawan' AND u.status = 'aktif' AND u.atasan_id IS NOT NULL AND u.atasan_id > 0
+                                ORDER BY u.nama ASC");
+                            while ($k = $karyawanAssigned->fetch_assoc()): 
+                            ?>
+                            <option value="<?= $k['id'] ?>">
+                                <?= htmlspecialchars($k['nama']) ?> 
+                                (Saat ini: <?= htmlspecialchars($k['nama_atasan'] ?? '-') ?>)
+                            </option>
+                            <?php endwhile; ?>
+                        </optgroup>
+                    </select>
+                </div>
+                <button type="submit" name="assign_karyawan" class="btn btn-primary" style="padding:10px 20px">
+                    <i class="fas fa-link"></i> Assign
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- DAFTAR ATASAN & KARYAWAN BAWAHAN -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title"><i class="fas fa-sitemap"></i> Struktur Atasan & Karyawan</span>
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchAtasan" placeholder="Cari atasan..." onkeyup="searchTable('searchAtasan', 'atasanTable')">
+            </div>
+        </div>
+        <div class="table-container">
+            <table class="data-table" id="atasanTable">
+                <thead>
+                    <tr>
+                        <th>Atasan</th>
+                        <th>Jabatan</th>
+                        <th>Divisi</th>
+                        <th>Karyawan Bawahan</th>
+                        <th>Jumlah</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    $atasanList = getDaftarAtasan($conn);
+                    while ($atasan = $atasanList->fetch_assoc()):
+                        $bawahan = getKaryawanByAtasanId($conn, $atasan['id']);
+                        $jumlahBawahan = $bawahan->num_rows;
+                        $bawahanNames = [];
+                        while ($b = $bawahan->fetch_assoc()) {
+                            $bawahanNames[] = $b['nama'];
+                        }
+                        $bawahan->data_seek(0);
+                    ?>
+                    <tr>
+                        <td>
+                            <div style="display:flex;align-items:center;gap:10px">
+                                <img src="<?= $atasan['foto'] ?? 'https://via.placeholder.com/40' ?>" 
+                                     style="width:40px;height:40px;border-radius:50%;object-fit:cover">
+                                <div>
+                                    <strong><?= htmlspecialchars($atasan['nama']) ?></strong>
+                                    <div style="font-size:12px;color:#6b7280"><?= htmlspecialchars($atasan['email'] ?? '-') ?></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td><?= htmlspecialchars($atasan['nama_jabatan'] ?? '-') ?></td>
+                        <td><?= htmlspecialchars($atasan['nama_divisi'] ?? '-') ?></td>
+                        <td>
+                            <?php if ($jumlahBawahan > 0): ?>
+                                <div style="display:flex;flex-wrap:wrap;gap:5px">
+                                    <?php while ($b = $bawahan->fetch_assoc()): ?>
+                                    <span style="background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:12px;font-size:12px;display:inline-flex;align-items:center;gap:5px">
+                                        <img src="<?= $b['foto'] ?? 'https://via.placeholder.com/20' ?>" style="width:20px;height:20px;border-radius:50%;object-fit:cover">
+                                        <?= htmlspecialchars($b['nama']) ?>
+                                        <a href="?page=manajemen-atasan&hapus_bawahan=<?= $b['id'] ?>&atasan_id=<?= $atasan['id'] ?>" 
+                                           style="color:#dc2626;text-decoration:none;margin-left:3px"
+                                           onclick="return confirm('Hapus <?= htmlspecialchars($b['nama']) ?> dari daftar bawahan?')"
+                                           title="Hapus">
+                                            <i class="fas fa-times-circle"></i>
+                                        </a>
+                                    </span>
+                                    <?php endwhile; ?>
+                                </div>
+                            <?php else: ?>
+                                <span style="color:#9ca3af;font-size:13px"><i class="fas fa-exclamation-circle"></i> Belum ada karyawan</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <span class="badge badge-<?= $jumlahBawahan > 0 ? 'success' : 'warning' ?>">
+                                <?= $jumlahBawahan ?> orang
+                            </span>
+                        </td>
+                        <td>
+                            <button class="btn btn-primary btn-sm" onclick="openAssignModal(<?= $atasan['id'] ?>, '<?= htmlspecialchars($atasan['nama']) ?>')">
+                                <i class="fas fa-plus"></i> Tambah
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endwhile; ?>
+                    
+                    <?php if ($totalAtasanAktif == 0): ?>
+                    <tr>
+                        <td colspan="6" style="text-align:center;padding:30px;color:#6b7280">
+                            <i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>
+                            Belum ada atasan yang aktif
+                        </td>
+                    </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- MODAL TAMBAH KARYAWAN KE ATASAN -->
+    <div class="modal-overlay" id="assignModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3><i class="fas fa-user-plus"></i> Tambah Karyawan ke <span id="modalAtasanName"></span></h3>
+                <button class="modal-close" onclick="closeModal('assignModal')">&times;</button>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="atasan_id" id="modalAtasanId">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Pilih Karyawan</label>
+                        <select name="karyawan_id" class="form-control" required>
+                            <option value="">-- Pilih Karyawan --</option>
+                            <?php 
+                            $karyawanFree = getKaryawanTanpaAtasan($conn);
+                            while ($k = $karyawanFree->fetch_assoc()): 
+                            ?>
+                            <option value="<?= $k['id'] ?>">
+                                <?= htmlspecialchars($k['nama']) ?> (<?= htmlspecialchars($k['nama_jabatan'] ?? '-') ?>)
+                            </option>
+                            <?php endwhile; ?>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('assignModal')">Batal</button>
+                    <button type="submit" name="assign_karyawan" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Simpan
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+    function openAssignModal(atasanId, atasanName) {
+        document.getElementById('modalAtasanId').value = atasanId;
+        document.getElementById('modalAtasanName').textContent = atasanName;
+        openModal('assignModal');
+    }
+    </script>
+
+<?php elseif ($page == 'users'): ?>
                 <h1 class="page-title">Profile Admin</h1>
                 <p class="page-subtitle">Kelola informasi akun administrator Anda</p>
 

@@ -1,4 +1,6 @@
-<?php
+
+# Simpan file dashboard-atasan.php yang sudah diperbaiki
+fixed_dashboard_atasan = '''<?php
 require_once 'config.php';
 checkRole(['atasan']);
 
@@ -6,64 +8,94 @@ $user = getUserById($conn, $_SESSION['user_id']);
 $page = $_GET['page'] ?? 'dashboard';
 $notifCount = getUnreadNotifCount($conn, $_SESSION['user_id']);
 
-// Stats
-$stmt = $conn->query("SELECT COUNT(*) as total FROM users WHERE role='karyawan'");
-$totalKaryawan = $stmt->fetch_assoc()['total'];
+// Stats - HANYA karyawan bawahan atasan ini
+$stmt = $conn->prepare("SELECT COUNT(*) as total FROM users WHERE atasan_id = ? AND role='karyawan' AND status='aktif'");
+$stmt->bind_param("i", $_SESSION['user_id']);
+$stmt->execute();
+$totalKaryawan = $stmt->get_result()->fetch_assoc()['total'];
 
-$stmt = $conn->query("SELECT COUNT(*) as total FROM absensi WHERE tanggal=CURDATE() AND status='hadir'");
-$jumlahHadir = $stmt->fetch_assoc()['total'];
+$stmt = $conn->prepare("SELECT COUNT(*) as total FROM absensi a 
+                        JOIN users u ON a.user_id = u.id 
+                        WHERE u.atasan_id = ? AND a.tanggal = CURDATE() AND a.status='hadir'");
+$stmt->bind_param("i", $_SESSION['user_id']);
+$stmt->execute();
+$jumlahHadir = $stmt->get_result()->fetch_assoc()['total'];
 
-$stmt = $conn->query("SELECT COUNT(*) as total FROM request_system WHERE status='pending'");
-$pendingRequests = $stmt->fetch_assoc()['total'];
+$stmt = $conn->prepare("SELECT COUNT(*) as total FROM request_system r 
+                        JOIN users u ON r.user_id = u.id 
+                        WHERE u.atasan_id = ? AND r.status='pending'");
+$stmt->bind_param("i", $_SESSION['user_id']);
+$stmt->execute();
+$pendingRequests = $stmt->get_result()->fetch_assoc()['total'];
 
-// All Attendance
-$absensiQuery = "SELECT a.*, u.nama FROM absensi a JOIN users u ON a.user_id=u.id ORDER BY a.tanggal DESC";
-$absensiResult = $conn->query($absensiQuery);
+// Data - HANYA karyawan bawahan atasan ini
+$absensiResult = getAbsensiByAtasan($conn, $_SESSION['user_id'], 50);
+$requestsResult = getRequestByAtasan($conn, $_SESSION['user_id']);
+$kpiResult = getKpiByAtasan($conn, $_SESSION['user_id']);
 
-// All Requests
-$requestsQuery = "SELECT r.*, u.nama FROM request_system r JOIN users u ON r.user_id=u.id ORDER BY r.created_at DESC";
-$requestsResult = $conn->query($requestsQuery);
-
-// KPI Data for scoring
-$kpiQuery = "SELECT k.*, u.nama FROM kpi k JOIN users u ON k.user_id=u.id ORDER BY k.created_at DESC";
-$kpiResult = $conn->query($kpiQuery);
-
-// Handle Approve/Reject Request
+// Handle Approve/Reject Request dengan validasi bawahan
 if (isset($_POST['approve_request'])) {
     $reqId = $_POST['request_id'];
+    
+    // Validasi: request harus dari karyawan bawahan
+    $stmt = $conn->prepare("SELECT r.user_id, u.nama FROM request_system r 
+                            JOIN users u ON r.user_id = u.id 
+                            WHERE r.id = ? AND u.atasan_id = ?");
+    $stmt->bind_param("ii", $reqId, $_SESSION['user_id']);
+    $stmt->execute();
+    $reqData = $stmt->get_result()->fetch_assoc();
+    
+    if (!$reqData) {
+        header("Location: dashboard-atasan.php?page=request&error=unauthorized");
+        exit;
+    }
+    
     $stmt = $conn->prepare("UPDATE request_system SET status='disetujui', approved_by=?, komentar_atasan=? WHERE id=?");
     $stmt->bind_param("isi", $_SESSION['user_id'], $_POST['komentar'], $reqId);
     $stmt->execute();
     
-    $stmt = $conn->prepare("SELECT user_id FROM request_system WHERE id=?");
-    $stmt->bind_param("i", $reqId);
-    $stmt->execute();
-    $req = $stmt->get_result()->fetch_assoc();
-    addNotification($conn, $req['user_id'], 'Request Disetujui', 'Request Anda telah disetujui atasan');
+    addNotification($conn, $reqData['user_id'], 'Request Disetujui', 'Request Anda telah disetujui atasan');
     
-    header("Location: dashboard-atasan.php?page=request");
+    header("Location: dashboard-atasan.php?page=request&success=approved");
     exit;
 }
 
 if (isset($_POST['reject_request'])) {
     $reqId = $_POST['request_id'];
+    
+    // Validasi: request harus dari karyawan bawahan
+    $stmt = $conn->prepare("SELECT r.user_id, u.nama FROM request_system r 
+                            JOIN users u ON r.user_id = u.id 
+                            WHERE r.id = ? AND u.atasan_id = ?");
+    $stmt->bind_param("ii", $reqId, $_SESSION['user_id']);
+    $stmt->execute();
+    $reqData = $stmt->get_result()->fetch_assoc();
+    
+    if (!$reqData) {
+        header("Location: dashboard-atasan.php?page=request&error=unauthorized");
+        exit;
+    }
+    
     $stmt = $conn->prepare("UPDATE request_system SET status='ditolak', approved_by=?, komentar_atasan=? WHERE id=?");
     $stmt->bind_param("isi", $_SESSION['user_id'], $_POST['komentar'], $reqId);
     $stmt->execute();
     
-    $stmt = $conn->prepare("SELECT user_id FROM request_system WHERE id=?");
-    $stmt->bind_param("i", $reqId);
-    $stmt->execute();
-    $req = $stmt->get_result()->fetch_assoc();
-    addNotification($conn, $req['user_id'], 'Request Ditolak', 'Request Anda ditolak atasan');
+    addNotification($conn, $reqData['user_id'], 'Request Ditolak', 'Request Anda ditolak atasan');
     
-    header("Location: dashboard-atasan.php?page=request");
+    header("Location: dashboard-atasan.php?page=request&success=rejected");
     exit;
 }
 
-// Handle KPI Scoring
+// Handle KPI Scoring dengan validasi bawahan
 if (isset($_POST['save_kpi'])) {
-    $userId = $_POST['karyawan_id'];
+    $userId = (int) $_POST['karyawan_id'];
+    
+    // Validasi: karyawan harus bawahan atasan ini
+    if (!isBawahan($conn, $userId, $_SESSION['user_id'])) {
+        header("Location: dashboard-atasan.php?page=kpi&error=not_bawahan");
+        exit;
+    }
+    
     $periode = $_POST['periode'];
     $target = $_POST['target'];
     $realisasi = $_POST['realisasi'];
@@ -74,8 +106,8 @@ if (isset($_POST['save_kpi'])) {
     $stmt->bind_param("isdddsi", $userId, $periode, $target, $realisasi, $nilai, $komentar, $_SESSION['user_id']);
     $stmt->execute();
     
-    addNotification($conn, $userId, 'KPI Baru', 'Anda mendapat penilaian KPI baru');
-    header("Location: dashboard-atasan.php?page=kpi");
+    addNotification($conn, $userId, 'KPI Baru', 'Anda mendapat penilaian KPI baru dari atasan');
+    header("Location: dashboard-atasan.php?page=kpi&success=saved");
     exit;
 }
 
@@ -174,6 +206,13 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 <i class="fas fa-home"></i>
                 <span>Dashboard</span>
             </a>
+            <a href="?page=karyawan-saya" class="nav-item <?= $page=='karyawan-saya'?'active':'' ?>">
+                <i class="fas fa-users"></i>
+                <span>Karyawan Saya</span>
+                <?php if ($totalKaryawan > 0): ?>
+                    <span class="badge"><?= $totalKaryawan ?></span>
+                <?php endif; ?>
+            </a>
             <a href="?page=absensi" class="nav-item <?= $page=='absensi'?'active':'' ?>">
                 <i class="fas fa-clock"></i>
                 <span>Data Absensi</span>
@@ -225,7 +264,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                         <div class="stat-icon blue"><i class="fas fa-users"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalKaryawan ?></h3>
-                            <p>Total Karyawan</p>
+                            <p>Total Karyawan Bawahan</p>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -245,15 +284,15 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                     <div class="stat-card">
                         <div class="stat-icon red"><i class="fas fa-star"></i></div>
                         <div class="stat-info">
-                            <h3><?= round($conn->query("SELECT AVG(nilai) as avg FROM kpi")->fetch_assoc()['avg'] ?? 0, 2) ?></h3>
-                            <p>Rata-rata KPI</p>
+                            <h3><?= round($conn->query("SELECT AVG(k.nilai) as avg FROM kpi k JOIN users u ON k.user_id = u.id WHERE u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['avg'] ?? 0, 2) ?></h3>
+                            <p>Rata-rata KPI Bawahan</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title"><i class="fas fa-chart-bar"></i> Grafik Absensi Mingguan</span>
+                        <span class="card-title"><i class="fas fa-chart-bar"></i> Grafik Absensi Mingguan - Karyawan Bawahan</span>
                     </div>
                     <div class="chart-container">
                         <canvas id="absensiChart"></canvas>
@@ -265,15 +304,101 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 for ($i = 6; $i >= 0; $i--) {
                     $date = date('Y-m-d', strtotime("-$i days"));
                     $days[] = date('D', strtotime($date));
-                    $hadirData[] = $conn->query("SELECT COUNT(*) as c FROM absensi WHERE tanggal='$date' AND status='hadir'")->fetch_assoc()['c'];
-                    $telatData[] = $conn->query("SELECT COUNT(*) as c FROM absensi WHERE tanggal='$date' AND status='telat'")->fetch_assoc()['c'];
-                    $izinData[] = $conn->query("SELECT COUNT(*) as c FROM absensi WHERE tanggal='$date' AND status IN ('izin','sakit')")->fetch_assoc()['c'];
+                    $hadirData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status='hadir' AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
+                    $telatData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status='telat' AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
+                    $izinData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status IN ('izin','sakit') AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
                 }
                 ?>
 
+            <?php elseif ($page == 'karyawan-saya'): ?>
+                <h1 class="page-title">Karyawan Saya</h1>
+                <p class="page-subtitle">Daftar karyawan yang menjadi bawahan Anda</p>
+
+                <?php if (isset($_GET['error'])): ?>
+                    <div style="background:#fee2e2;color:#991b1b;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #ef4444">
+                        <i class="fas fa-exclamation-circle"></i> 
+                        <?php 
+                        switch($_GET['error']) {
+                            case 'not_bawahan': echo 'Karyawan tersebut bukan bawahan Anda!'; break;
+                            case 'unauthorized': echo 'Anda tidak memiliki akses ke data tersebut!'; break;
+                            default: echo 'Terjadi kesalahan!';
+                        }
+                        ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (isset($_GET['success'])): ?>
+                    <div style="background:#d1fae5;color:#065f46;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #10b981">
+                        <i class="fas fa-check-circle"></i> 
+                        <?php 
+                        switch($_GET['success']) {
+                            case 'approved': echo 'Request berhasil disetujui!'; break;
+                            case 'rejected': echo 'Request berhasil ditolak!'; break;
+                            case 'saved': echo 'Penilaian KPI berhasil disimpan!'; break;
+                            default: echo 'Operasi berhasil!';
+                        }
+                        ?>
+                    </div>
+                <?php endif; ?>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fas fa-users"></i> Daftar Karyawan Bawahan</span>
+                        <span class="badge badge-success"><?= $totalKaryawan ?> orang</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Foto</th>
+                                    <th>Nama</th>
+                                    <th>Email</th>
+                                    <th>Divisi</th>
+                                    <th>Jabatan</th>
+                                    <th>Status</th>
+                                    <th>Bergabung</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $karyawanSaya = getKaryawanByAtasan($conn, $_SESSION['user_id']);
+                                if ($karyawanSaya->num_rows == 0):
+                                ?>
+                                <tr>
+                                    <td colspan="7" style="text-align:center;padding:40px;color:#6b7280">
+                                        <i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>
+                                        <p>Belum ada karyawan yang ditugaskan ke Anda</p>
+                                        <p style="font-size:12px">Hubungi admin untuk menambahkan karyawan</p>
+                                    </td>
+                                </tr>
+                                <?php else: ?>
+                                    <?php while ($row = $karyawanSaya->fetch_assoc()): ?>
+                                    <tr>
+                                        <td>
+                                            <img src="<?= $row['foto'] ?? 'https://via.placeholder.com/40' ?>" 
+                                                 style="width:40px;height:40px;border-radius:50%;object-fit:cover">
+                                        </td>
+                                        <td><strong><?= htmlspecialchars($row['nama']) ?></strong></td>
+                                        <td><?= htmlspecialchars($row['email'] ?? '-') ?></td>
+                                        <td><?= htmlspecialchars($row['nama_divisi'] ?? '-') ?></td>
+                                        <td><?= htmlspecialchars($row['nama_jabatan'] ?? '-') ?></td>
+                                        <td>
+                                            <span class="badge badge-<?= $row['status']=='aktif'?'success':'secondary' ?>">
+                                                <?= $row['status']=='aktif'?'Aktif':'Tidak Aktif' ?>
+                                            </span>
+                                        </td>
+                                        <td><?= date('d/m/Y', strtotime($row['created_at'])) ?></td>
+                                    </tr>
+                                    <?php endwhile; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
             <?php elseif ($page == 'absensi'): ?>
                 <h1 class="page-title">Data Absensi Karyawan</h1>
-                <p class="page-subtitle">Monitoring kehadiran seluruh karyawan</p>
+                <p class="page-subtitle">Monitoring kehadiran karyawan bawahan</p>
 
                 <div class="search-filter">
                     <div class="search-box">
@@ -285,7 +410,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
 
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title">Riwayat Absensi</span>
+                        <span class="card-title">Riwayat Absensi - Karyawan Bawahan</span>
                         <button class="btn btn-secondary btn-sm" onclick="exportToCSV('absensiTable', 'absensi_karyawan')">
                             <i class="fas fa-download"></i> Export
                         </button>
@@ -315,6 +440,14 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                                     </td>
                                 </tr>
                                 <?php endwhile; ?>
+                                <?php if ($absensiResult->num_rows == 0): ?>
+                                <tr>
+                                    <td colspan="5" style="text-align:center;padding:30px;color:#6b7280">
+                                        <i class="fas fa-inbox" style="font-size:24px;display:block;margin-bottom:10px"></i>
+                                        Belum ada data absensi dari karyawan bawahan
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
@@ -322,11 +455,22 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
 
             <?php elseif ($page == 'request'): ?>
                 <h1 class="page-title">Request System</h1>
-                <p class="page-subtitle">Kelola permintaan izin, cuti, sakit, dan lembur karyawan</p>
+                <p class="page-subtitle">Kelola permintaan izin, cuti, sakit, dan lembur karyawan bawahan</p>
+
+                <?php if (isset($_GET['error'])): ?>
+                    <div style="background:#fee2e2;color:#991b1b;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #ef4444">
+                        <i class="fas fa-exclamation-circle"></i> <?= $_GET['error'] == 'unauthorized' ? 'Anda tidak memiliki akses ke request tersebut!' : 'Terjadi kesalahan!' ?>
+                    </div>
+                <?php endif; ?>
+                <?php if (isset($_GET['success'])): ?>
+                    <div style="background:#d1fae5;color:#065f46;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #10b981">
+                        <i class="fas fa-check-circle"></i> <?= $_GET['success'] == 'approved' ? 'Request berhasil disetujui!' : 'Request berhasil ditolak!' ?>
+                    </div>
+                <?php endif; ?>
 
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title">Daftar Request</span>
+                        <span class="card-title">Daftar Request - Karyawan Bawahan</span>
                     </div>
                     <div class="table-container">
                         <table class="data-table">
@@ -354,10 +498,10 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                                     </td>
                                     <td>
                                         <?php if ($row['status'] == 'pending'): ?>
-                                        <button class="btn btn-success btn-sm" onclick="openApproveModal(<?= $row['id'] ?>, '<?= $row['nama'] ?>', '<?= $row['jenis_request'] ?>')">
+                                        <button class="btn btn-success btn-sm" onclick="openApproveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nama']) ?>', '<?= $row['jenis_request'] ?>')">
                                             <i class="fas fa-check"></i>
                                         </button>
-                                        <button class="btn btn-danger btn-sm" onclick="openRejectModal(<?= $row['id'] ?>, '<?= $row['nama'] ?>', '<?= $row['jenis_request'] ?>')">
+                                        <button class="btn btn-danger btn-sm" onclick="openRejectModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nama']) ?>', '<?= $row['jenis_request'] ?>')">
                                             <i class="fas fa-times"></i>
                                         </button>
                                         <?php else: ?>
@@ -366,6 +510,14 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                                     </td>
                                 </tr>
                                 <?php endwhile; ?>
+                                <?php if ($requestsResult->num_rows == 0): ?>
+                                <tr>
+                                    <td colspan="6" style="text-align:center;padding:30px;color:#6b7280">
+                                        <i class="fas fa-inbox" style="font-size:24px;display:block;margin-bottom:10px"></i>
+                                        Belum ada request dari karyawan bawahan
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
@@ -373,7 +525,18 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
 
             <?php elseif ($page == 'kpi'): ?>
                 <h1 class="page-title">Penilaian KPI</h1>
-                <p class="page-subtitle">Beri penilaian kinerja karyawan</p>
+                <p class="page-subtitle">Beri penilaian kinerja karyawan bawahan</p>
+
+                <?php if (isset($_GET['error'])): ?>
+                    <div style="background:#fee2e2;color:#991b1b;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #ef4444">
+                        <i class="fas fa-exclamation-circle"></i> <?= $_GET['error'] == 'not_bawahan' ? 'Karyawan tersebut bukan bawahan Anda!' : 'Terjadi kesalahan!' ?>
+                    </div>
+                <?php endif; ?>
+                <?php if (isset($_GET['success'])): ?>
+                    <div style="background:#d1fae5;color:#065f46;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #10b981">
+                        <i class="fas fa-check-circle"></i> Penilaian KPI berhasil disimpan!
+                    </div>
+                <?php endif; ?>
 
                 <div class="card">
                     <div class="card-header">
@@ -385,12 +548,15 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                             <select name="karyawan_id" class="form-control" required>
                                 <option value="">Pilih Karyawan</option>
                                 <?php
-                                $karyawan = $conn->query("SELECT id, nama FROM users WHERE role='karyawan'");
+                                $karyawan = getKaryawanByAtasan($conn, $_SESSION['user_id']);
                                 while ($k = $karyawan->fetch_assoc()):
                                 ?>
-                                <option value="<?= $k['id'] ?>"><?= htmlspecialchars($k['nama']) ?></option>
+                                <option value="<?= $k['id'] ?>"><?= htmlspecialchars($k['nama']) ?> (<?= htmlspecialchars($k['nama_jabatan'] ?? '-') ?>)</option>
                                 <?php endwhile; ?>
                             </select>
+                            <?php if ($karyawan->num_rows == 0): ?>
+                            <small style="color:#dc2626"><i class="fas fa-exclamation-triangle"></i> Belum ada karyawan bawahan</small>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label>Periode</label>
@@ -399,6 +565,10 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                         <div class="form-group">
                             <label>Target (%)</label>
                             <input type="number" step="0.01" name="target" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Realisasi (%)</label>
+                            <input type="number" step="0.01" name="realisasi" class="form-control" required>
                         </div>
                         <div class="form-group">
                             <label>Nilai</label>
@@ -416,7 +586,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
 
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title">Riwayat Penilaian KPI</span>
+                        <span class="card-title">Riwayat Penilaian KPI - Karyawan Bawahan</span>
                     </div>
                     <div class="table-container">
                         <table class="data-table">
@@ -439,6 +609,14 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                                     <td><?= htmlspecialchars($row['komentar'] ?? '-') ?></td>
                                 </tr>
                                 <?php endwhile; ?>
+                                <?php if ($kpiResult->num_rows == 0): ?>
+                                <tr>
+                                    <td colspan="5" style="text-align:center;padding:30px;color:#6b7280">
+                                        <i class="fas fa-inbox" style="font-size:24px;display:block;margin-bottom:10px"></i>
+                                        Belum ada penilaian KPI
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
@@ -717,7 +895,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
         </div>
     </div>
 
-        <script src="js/script.js"></script>
+    <script src="js/script.js"></script>
     <script>
         function openApproveModal(id, nama, jenis) {
             document.getElementById('approveId').value = id;

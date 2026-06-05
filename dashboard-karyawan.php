@@ -62,6 +62,7 @@ if (isset($_POST['checkout'])) {
 }
 
 // Handle Request
+// Handle Request - Notifikasi ke atasan spesifik
 if (isset($_POST['submit_request'])) {
     $jenis = $_POST['jenis_request'];
     $tgl_mulai = $_POST['tanggal_mulai'];
@@ -76,16 +77,17 @@ if (isset($_POST['submit_request'])) {
         move_uploaded_file($_FILES['file_bukti']['tmp_name'], $file_bukti);
     }
     
-    $stmt = $conn->prepare("INSERT INTO request_system (user_id, jenis_request, tanggal_mulai, tanggal_selesai, alasan, file_bukti) VALUES (?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("isssss", $_SESSION['user_id'], $jenis, $tgl_mulai, $tgl_selesai, $alasan, $file_bukti);
+    // Get atasan_id karyawan
+    $atasan = getAtasanByKaryawan($conn, $_SESSION['user_id']);
+    $atasanId = $atasan ? $atasan['id'] : null;
+    
+    $stmt = $conn->prepare("INSERT INTO request_system (user_id, atasan_id, jenis_request, tanggal_mulai, tanggal_selesai, alasan, file_bukti) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("iisssss", $_SESSION['user_id'], $atasanId, $jenis, $tgl_mulai, $tgl_selesai, $alasan, $file_bukti);
     $stmt->execute();
     
-    // Notify atasan
-    $stmt = $conn->prepare("SELECT id FROM users WHERE role='atasan' LIMIT 1");
-    $stmt->execute();
-    $atasan = $stmt->get_result()->fetch_assoc();
-    if ($atasan) {
-        addNotification($conn, $atasan['id'], 'Request Baru', $_SESSION['nama'] . ' mengajukan ' . $jenis);
+    // Notify atasan spesifik (jika ada)
+    if ($atasanId) {
+        addNotification($conn, $atasanId, 'Request Baru', $_SESSION['nama'] . ' mengajukan ' . $jenis);
     }
     
     header("Location: dashboard-karyawan.php");
