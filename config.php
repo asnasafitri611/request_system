@@ -188,4 +188,155 @@ function validateAtasanAccess($conn, $atasanId, $karyawanId) {
         exit;
     }
 }
+// ============================================
+// HELPER FUNCTIONS: PENGUMUMAN
+// ============================================
+
+/**
+ * Get pengumuman yang bisa dilihat user (berdasarkan role & divisi)
+ */
+function getPengumumanForUser($conn, $userId, $role, $divisiId = null) {
+    $sql = "SELECT p.*, u.nama as pengirim, d.nama_divisi 
+            FROM pengumuman p 
+            LEFT JOIN users u ON p.created_by = u.id 
+            LEFT JOIN divisi d ON p.divisi_id = d.id 
+            WHERE (p.tipe_target = 'semua'";
+    
+    $params = [];
+    $types = "";
+    
+    // Karyawan & Atasan: bisa lihat pengumuman divisi mereka
+    if ($role != 'admin' && $divisiId) {
+        $sql .= " OR (p.tipe_target = 'divisi' AND p.divisi_id = ?)";
+        $params[] = $divisiId;
+        $types .= "i";
+    } elseif ($role == 'admin') {
+        // Admin bisa lihat semua pengumuman divisi juga
+        $sql .= " OR p.tipe_target = 'divisi'";
+    }
+    
+    $sql .= ") AND (p.tanggal_kadaluarsa IS NULL OR p.tanggal_kadaluarsa >= CURDATE())
+             ORDER BY p.created_at DESC";
+    
+    $stmt = $conn->prepare($sql);
+    if (!empty($params)) {
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    return $stmt->get_result();
+}
+
+/**
+ * Get jumlah pengumuman belum dibaca user
+ */
+function getUnreadPengumumanCount($conn, $userId) {
+    $user = getUserById($conn, $userId);
+    $role = $user['role'];
+    $divisiId = $user['divisi_id'];
+    
+    $sql = "SELECT COUNT(*) as total FROM pengumuman p 
+            WHERE (p.tipe_target = 'semua'";
+    
+    $params = [];
+    $types = "";
+    
+    if ($role != 'admin' && $divisiId) {
+        $sql .= " OR (p.tipe_target = 'divisi' AND p.divisi_id = ?)";
+        $params[] = $divisiId;
+        $types .= "i";
+    } elseif ($role == 'admin') {
+        $sql .= " OR p.tipe_target = 'divisi'";
+    }
+    
+    $sql .= ") AND (p.tanggal_kadaluarsa IS NULL OR p.tanggal_kadaluarsa >= CURDATE())
+             AND NOT EXISTS (
+                 SELECT 1 FROM pengumuman_read pr 
+                 WHERE pr.pengumuman_id = p.id AND pr.user_id = ?
+             )";
+    
+    $params[] = $userId;
+    $types .= "i";
+    
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc()['total'];
+}
+
+/**
+ * Mark pengumuman as read
+ */
+function markPengumumanRead($conn, $pengumumanId, $userId) {
+    $stmt = $conn->prepare("INSERT IGNORE INTO pengumuman_read (pengumuman_id, user_id) VALUES (?, ?)");
+    $stmt->bind_param("ii", $pengumumanId, $userId);
+    return $stmt->execute();
+}
+
+/**
+ * Cek apakah user sudah baca pengumuman
+ */
+function isPengumumanRead($conn, $pengumumanId, $userId) {
+    $stmt = $conn->prepare("SELECT id FROM pengumuman_read WHERE pengumuman_id = ? AND user_id = ?");
+    $stmt->bind_param("ii", $pengumumanId, $userId);
+    $stmt->execute();
+    return $stmt->get_result()->num_rows > 0;
+}
+
+/**
+ * Get read count untuk pengumuman
+ */
+function getPengumumanReadCount($conn, $pengumumanId) {
+    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM pengumuman_read WHERE pengumuman_id = ?");
+    $stmt->bind_param("i", $pengumumanId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc()['total'];
+}
+
+/**
+ * Get daftar user yang sudah baca pengumuman
+ */
+function getPengumumanReaders($conn, $pengumumanId) {
+    $stmt = $conn->prepare("SELECT u.nama, u.role, d.nama_divisi, pr.read_at 
+                            FROM pengumuman_read pr 
+                            JOIN users u ON pr.user_id = u.id 
+                            LEFT JOIN divisi d ON u.divisi_id = d.id 
+                            WHERE pr.pengumuman_id = ? 
+                            ORDER BY pr.read_at DESC");
+    $stmt->bind_param("i", $pengumumanId);
+    $stmt->execute();
+    return $stmt->get_result();
+}
+
+/**
+ * Get detail pengumuman dengan cek akses
+ */
+function getPengumumanDetail($conn, $pengumumanId, $userId) {
+    $user = getUserById($conn, $userId);
+    $role = $user['role'];
+    $divisiId = $user['divisi_id'];
+    
+    $sql = "SELECT p.*, u.nama as pengirim, d.nama_divisi 
+            FROM pengumuman p 
+            LEFT JOIN users u ON p.created_by = u.id 
+            LEFT JOIN divisi d ON p.divisi_id = d.id 
+            WHERE p.id = ? AND (p.tipe_target = 'semua'";
+    
+    $params = [$pengumumanId];
+    $types = "i";
+    
+    if ($role != 'admin' && $divisiId) {
+        $sql .= " OR (p.tipe_target = 'divisi' AND p.divisi_id = ?)";
+        $params[] = $divisiId;
+        $types .= "i";
+    } elseif ($role == 'admin') {
+        $sql .= " OR p.tipe_target = 'divisi'";
+    }
+    
+    $sql .= ")";
+    
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc();
+}
 ?>

@@ -1,3 +1,4 @@
+
 <?php
 require_once 'config.php';
 checkRole(['karyawan']);
@@ -61,7 +62,6 @@ if (isset($_POST['checkout'])) {
     exit;
 }
 
-// Handle Request
 // Handle Request - Notifikasi ke atasan spesifik
 if (isset($_POST['submit_request'])) {
     $jenis = $_POST['jenis_request'];
@@ -181,6 +181,16 @@ $notifCount = getUnreadNotifCount($conn, $_SESSION['user_id']);
                 <i class="fas fa-chart-line"></i>
                 <span>KPI</span>
             </a>
+            <a href="?page=pengumuman" class="nav-item <?= $page=='pengumuman'?'active':'' ?>">
+                <i class="fas fa-bullhorn"></i>
+                <span>Pengumuman</span>
+                <?php 
+                $unreadPengumuman = getUnreadPengumumanCount($conn, $_SESSION['user_id']);
+                if ($unreadPengumuman > 0): 
+                ?>
+                    <span class="badge"><?= $unreadPengumuman ?></span>
+                <?php endif; ?>
+            </a>
             <a href="?page=profile" class="nav-item <?= $page=='profile'?'active':'' ?>">
                 <i class="fas fa-user"></i>
                 <span>Profile</span>
@@ -202,10 +212,21 @@ $notifCount = getUnreadNotifCount($conn, $_SESSION['user_id']);
                 <span class="breadcrumb">Dashboard / <?= ucfirst($page) ?></span>
             </div>
             <div class="nav-right">
+                <div class="nav-icon" onclick="openModal('notifModal')" style="position:relative">
+                    <i class="fas fa-bell"></i>
+                    <?php if ($notifCount > 0): ?>
+                        <span class="notif-count"><?= $notifCount ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="nav-icon" onclick="openModal('notifModal')" style="position:relative">
+                    <i class="fas fa-bullhorn"></i>
+                    <?php if ($unreadPengumuman > 0): ?>
+                        <span class="notif-count"><?= $unreadPengumuman ?></span>
+                    <?php endif; ?>
+                </div>
                 <div class="nav-icon" onclick="toggleDarkMode()">
                     <i class="fas fa-moon"></i>
                 </div>
-                
             </div>
         </div>
 
@@ -413,6 +434,8 @@ $notifCount = getUnreadNotifCount($conn, $_SESSION['user_id']);
                     <div class="stat-card">
                         <div class="stat-icon blue"><i class="fas fa-check"></i></div>
                         <div class="stat-info">
+                            <h3><?= $latestKpi ? $latestKpi['realisasi'] : '-' ?></h3>
+                            <p>Realisasi</p>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -502,6 +525,90 @@ $notifCount = getUnreadNotifCount($conn, $_SESSION['user_id']);
                     </div>
                 </div>
 
+            <?php elseif ($page == 'pengumuman'): ?>
+                <h1 class="page-title">Pengumuman</h1>
+                <p class="page-subtitle">Informasi terbaru dari perusahaan & atasan</p>
+
+                <?php
+                $pengumumanList = getPengumumanForUser($conn, $_SESSION['user_id'], 'karyawan', $user['divisi_id']);
+                ?>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fas fa-inbox"></i> Daftar Pengumuman</span>
+                        <span class="badge badge-primary"><?= $pengumumanList->num_rows ?> pengumuman</span>
+                    </div>
+                    <div style="padding:20px">
+                        <?php 
+                        $hasData = false;
+                        while ($row = $pengumumanList->fetch_assoc()): 
+                            $hasData = true;
+                            $isRead = isPengumumanRead($conn, $row['id'], $_SESSION['user_id']);
+                            $isExpired = $row['tanggal_kadaluarsa'] && strtotime($row['tanggal_kadaluarsa']) < strtotime(date('Y-m-d'));
+                        ?>
+                        <div style="padding:20px;border-bottom:1px solid #e2e8f0;<?= $isRead ? '' : 'background:#f0fdf4;border-left:4px solid #10b981' ?>;border-radius:8px;margin-bottom:12px">
+                            <div style="display:flex;justify-content:space-between;align-items:start;gap:15px">
+                                <div style="flex:1">
+                                    <h4 style="font-size:16px;margin-bottom:8px">
+                                        <?php if (!$isRead): ?><span class="badge badge-success" style="margin-right:8px">Baru</span><?php endif; ?>
+                                        <?= htmlspecialchars($row['judul']) ?>
+                                    </h4>
+                                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                                        <span class="badge badge-<?= $row['tipe_target']=='semua'?'primary':'warning' ?>">
+                                            <?= $row['tipe_target']=='semua'?'Semua Karyawan':'Divisi: '.htmlspecialchars($row['nama_divisi']) ?>
+                                        </span>
+                                        <span class="badge badge-info">
+                                            <i class="fas fa-user"></i> <?= htmlspecialchars($row['pengirim']) ?>
+                                        </span>
+                                        <span class="badge badge-secondary">
+                                            <i class="fas fa-clock"></i> <?= date('d/m/Y H:i', strtotime($row['created_at'])) ?>
+                                        </span>
+                                        <?php if ($isExpired): ?>
+                                        <span class="badge badge-danger">Expired</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <p style="color:#4b5563;font-size:14px;line-height:1.6">
+                                        <?= nl2br(htmlspecialchars(substr($row['isi'], 0, 250))) ?><?= strlen($row['isi']) > 250 ? '...' : '' ?>
+                                    </p>
+                                </div>
+                                <button class="btn btn-info btn-sm" onclick="viewPengumumanDetail(<?= $row['id'] ?>)" style="white-space:nowrap">
+                                    <i class="fas fa-eye"></i> Baca
+                                </button>
+                            </div>
+                        </div>
+                        <?php endwhile; ?>
+                        
+                        <?php if (!$hasData): ?>
+                        <div style="text-align:center;padding:40px;color:#6b7280">
+                            <i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>
+                            <p>Tidak ada pengumuman untuk Anda</p>
+                            <small>Pengumuman dari admin atau atasan akan muncul di sini</small>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- MODAL: Detail Pengumuman -->
+                <div class="modal-overlay" id="detailPengumumanModal">
+                    <div class="modal" style="max-width:800px">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-info-circle"></i> Detail Pengumuman</h3>
+                            <button class="modal-close" onclick="closeModal('detailPengumumanModal')">&times;</button>
+                        </div>
+                        <div class="modal-body" id="detailPengumumanContent"></div>
+                    </div>
+                </div>
+
+                <script>
+                function viewPengumumanDetail(id) {
+                    fetch('ajax_pengumuman_detail.php?id=' + id)
+                        .then(response => response.text())
+                        .then(html => {
+                            document.getElementById('detailPengumumanContent').innerHTML = html;
+                            openModal('detailPengumumanModal');
+                        });
+                }
+                </script>
 
             <?php elseif ($page == 'profile'): ?>
                 <h1 class="page-title">Profile</h1>

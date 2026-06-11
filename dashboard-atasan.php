@@ -1,6 +1,4 @@
-
-# Simpan file dashboard-atasan.php yang sudah diperbaiki
-fixed_dashboard_atasan = '''<?php
+<?php
 require_once 'config.php';
 checkRole(['atasan']);
 
@@ -8,7 +6,125 @@ $user = getUserById($conn, $_SESSION['user_id']);
 $page = $_GET['page'] ?? 'dashboard';
 $notifCount = getUnreadNotifCount($conn, $_SESSION['user_id']);
 
-// Stats - HANYA karyawan bawahan atasan ini
+// ============================================
+// HANDLE PENGUMUMAN ATASAN
+// ============================================
+
+// Tambah Pengumuman
+if (isset($_POST['tambah_pengumuman'])) {
+    $judul = $_POST['judul'];
+    $isi = $_POST['isi'];
+    $divisi_id = $user['divisi_id'];
+    $tanggal_kadaluarsa = !empty($_POST['tanggal_kadaluarsa']) ? $_POST['tanggal_kadaluarsa'] : null;
+    
+    $file_lampiran = '';
+    if (!empty($_FILES['file_lampiran']['name'])) {
+        $uploadDir = 'uploads/pengumuman/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+        $file_lampiran = $uploadDir . time() . '_' . basename($_FILES['file_lampiran']['name']);
+        move_uploaded_file($_FILES['file_lampiran']['tmp_name'], $file_lampiran);
+    }
+    
+    $stmt = $conn->prepare("INSERT INTO pengumuman (judul, isi, tipe_target, divisi_id, file_lampiran, tanggal_kadaluarsa, created_by) VALUES (?, ?, 'divisi', ?, ?, ?, ?)");
+    $stmt->bind_param("ssiss", $judul, $isi, $divisi_id, $file_lampiran, $tanggal_kadaluarsa, $_SESSION['user_id']);
+    $stmt->execute();
+    
+    // Notifikasi ke karyawan bawahan & karyawan di divisi yang sama
+    $notifStmt = $conn->prepare("SELECT id FROM users WHERE status='aktif' AND divisi_id = ? AND id != ? AND (role = 'karyawan' OR role = 'atasan')");
+    $notifStmt->bind_param("ii", $divisi_id, $_SESSION['user_id']);
+    $notifStmt->execute();
+    $notifResult = $notifStmt->get_result();
+    while ($u = $notifResult->fetch_assoc()) {
+        addNotification($conn, $u['id'], 'Pengumuman Divisi', 'Ada pengumuman dari atasan: ' . $judul);
+    }
+    
+    header("Location: dashboard-atasan.php?page=pengumuman&success=added");
+    exit;
+}
+
+// Edit Pengumuman
+if (isset($_POST['edit_pengumuman'])) {
+    $id = $_POST['pengumuman_id'];
+    $judul = $_POST['judul'];
+    $isi = $_POST['isi'];
+    $tanggal_kadaluarsa = !empty($_POST['tanggal_kadaluarsa']) ? $_POST['tanggal_kadaluarsa'] : null;
+    
+    $stmt = $conn->prepare("SELECT file_lampiran FROM pengumuman WHERE id = ? AND created_by = ?");
+    $stmt->bind_param("ii", $id, $_SESSION['user_id']);
+    $stmt->execute();
+    $existing = $stmt->get_result()->fetch_assoc();
+    
+    if (!$existing) {
+        header("Location: dashboard-atasan.php?page=pengumuman&error=unauthorized");
+        exit;
+    }
+    
+    $file_lampiran = $existing['file_lampiran'];
+    if (!empty($_FILES['file_lampiran']['name'])) {
+        if (!empty($file_lampiran) && file_exists($file_lampiran)) {
+            @unlink($file_lampiran);
+        }
+        $uploadDir = 'uploads/pengumuman/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+        $file_lampiran = $uploadDir . time() . '_' . basename($_FILES['file_lampiran']['name']);
+        move_uploaded_file($_FILES['file_lampiran']['tmp_name'], $file_lampiran);
+    }
+    
+    $stmt = $conn->prepare("UPDATE pengumuman SET judul=?, isi=?, file_lampiran=?, tanggal_kadaluarsa=? WHERE id=? AND created_by=?");
+    $stmt->bind_param("ssssii", $judul, $isi, $file_lampiran, $tanggal_kadaluarsa, $id, $_SESSION['user_id']);
+    $stmt->execute();
+    
+    header("Location: dashboard-atasan.php?page=pengumuman&success=updated");
+    exit;
+}
+
+// Hapus Pengumuman
+if (isset($_GET['hapus_pengumuman'])) {
+    $id = (int) $_GET['hapus_pengumuman'];
+    
+    $stmt = $conn->prepare("SELECT file_lampiran FROM pengumuman WHERE id = ? AND created_by = ?");
+    $stmt->bind_param("ii", $id, $_SESSION['user_id']);
+    $stmt->execute();
+    $p = $stmt->get_result()->fetch_assoc();
+    
+    if ($p) {
+        if (!empty($p['file_lampiran']) && file_exists($p['file_lampiran'])) {
+            @unlink($p['file_lampiran']);
+        }
+        $stmt = $conn->prepare("DELETE FROM pengumuman WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $stmt = $conn->prepare("DELETE FROM pengumuman_read WHERE pengumuman_id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+    }
+    
+    header("Location: dashboard-atasan.php?page=pengumuman&success=deleted");
+    exit;
+}
+
+// Data pengumuman untuk atasan
+$atasanDivisi = $user['divisi_id'];
+$pengumumanList = $conn->query("SELECT p.*, u.nama as pengirim, d.nama_divisi, 
+                                (SELECT COUNT(*) FROM pengumuman_read pr WHERE pr.pengumuman_id = p.id) as read_count 
+                                FROM pengumuman p 
+                                LEFT JOIN users u ON p.created_by = u.id 
+                                LEFT JOIN divisi d ON p.divisi_id = d.id 
+                                WHERE (p.tipe_target = 'semua' OR (p.tipe_target = 'divisi' AND p.divisi_id = $atasanDivisi))
+                                AND (p.tanggal_kadaluarsa IS NULL OR p.tanggal_kadaluarsa >= CURDATE())
+                                ORDER BY p.created_at DESC");
+
+$myPengumuman = $conn->query("SELECT p.*, d.nama_divisi, 
+                               (SELECT COUNT(*) FROM pengumuman_read pr WHERE pr.pengumuman_id = p.id) as read_count 
+                               FROM pengumuman p 
+                               LEFT JOIN divisi d ON p.divisi_id = d.id 
+                               WHERE p.created_by = " . $_SESSION['user_id'] . "
+                               ORDER BY p.created_at DESC");
+
+// ============================================
+// STATS & DATA
+// ============================================
+
 $stmt = $conn->prepare("SELECT COUNT(*) as total FROM users WHERE atasan_id = ? AND role='karyawan' AND status='aktif'");
 $stmt->bind_param("i", $_SESSION['user_id']);
 $stmt->execute();
@@ -27,17 +143,32 @@ $stmt = $conn->prepare("SELECT COUNT(*) as total FROM request_system r
 $stmt->bind_param("i", $_SESSION['user_id']);
 $stmt->execute();
 $pendingRequests = $stmt->get_result()->fetch_assoc()['total'];
+// ============================================
+// DATA GRAFIK ABSENSI MINGGUAN (untuk Chart.js)
+// ============================================
+$days = []; 
+$hadirData = []; 
+$telatData = []; 
+$izinData = [];
+for ($i = 6; $i >= 0; $i--) {
+    $date = date('Y-m-d', strtotime("-$i days"));
+    $days[] = date('D', strtotime($date));
+    $hadirData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status='hadir' AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
+    $telatData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status='telat' AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
+    $izinData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status IN ('izin','sakit') AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
+}
 
-// Data - HANYA karyawan bawahan atasan ini
 $absensiResult = getAbsensiByAtasan($conn, $_SESSION['user_id'], 50);
 $requestsResult = getRequestByAtasan($conn, $_SESSION['user_id']);
 $kpiResult = getKpiByAtasan($conn, $_SESSION['user_id']);
 
-// Handle Approve/Reject Request dengan validasi bawahan
+// ============================================
+// HANDLE APPROVE/REJECT REQUEST
+// ============================================
+
 if (isset($_POST['approve_request'])) {
     $reqId = $_POST['request_id'];
     
-    // Validasi: request harus dari karyawan bawahan
     $stmt = $conn->prepare("SELECT r.user_id, u.nama FROM request_system r 
                             JOIN users u ON r.user_id = u.id 
                             WHERE r.id = ? AND u.atasan_id = ?");
@@ -63,7 +194,6 @@ if (isset($_POST['approve_request'])) {
 if (isset($_POST['reject_request'])) {
     $reqId = $_POST['request_id'];
     
-    // Validasi: request harus dari karyawan bawahan
     $stmt = $conn->prepare("SELECT r.user_id, u.nama FROM request_system r 
                             JOIN users u ON r.user_id = u.id 
                             WHERE r.id = ? AND u.atasan_id = ?");
@@ -86,11 +216,13 @@ if (isset($_POST['reject_request'])) {
     exit;
 }
 
-// Handle KPI Scoring dengan validasi bawahan
+// ============================================
+// HANDLE KPI SCORING
+// ============================================
+
 if (isset($_POST['save_kpi'])) {
     $userId = (int) $_POST['karyawan_id'];
     
-    // Validasi: karyawan harus bawahan atasan ini
     if (!isBawahan($conn, $userId, $_SESSION['user_id'])) {
         header("Location: dashboard-atasan.php?page=kpi&error=not_bawahan");
         exit;
@@ -112,7 +244,7 @@ if (isset($_POST['save_kpi'])) {
 }
 
 // ============================================
-// HANDLE PROFILE ATASAN (UPDATE LENGKAP)
+// HANDLE PROFILE ATASAN
 // ============================================
 
 $profileMsg = '';
@@ -120,7 +252,6 @@ $profileError = '';
 $passMsg = '';
 $passError = '';
 
-// Handle Profile Update
 if (isset($_POST['update_profile'])) {
     $nama = $_POST['nama'];
     $email = $_POST['email'];
@@ -129,7 +260,6 @@ if (isset($_POST['update_profile'])) {
     $divisi_id = $_POST['divisi_id'];
     $jabatan_id = $_POST['jabatan_id'];
     
-    // Cek username sudah dipakai user lain?
     $stmt = $conn->prepare("SELECT id FROM users WHERE username=? AND id!=?");
     $stmt->bind_param("si", $username, $_SESSION['user_id']);
     $stmt->execute();
@@ -151,13 +281,10 @@ if (isset($_POST['update_profile'])) {
         $_SESSION['nama'] = $nama;
         $_SESSION['username'] = $username;
         $profileMsg = "Profile berhasil diperbarui!";
-        
-        // Refresh user data
         $user = getUserById($conn, $_SESSION['user_id']);
     }
 }
 
-// Handle Password Change
 if (isset($_POST['change_password'])) {
     $old = $_POST['old_password'];
     $new = $_POST['new_password'];
@@ -174,7 +301,6 @@ if (isset($_POST['change_password'])) {
     }
 }
 
-// Ambil data divisi & jabatan untuk dropdown
 $divisiList = $conn->query("SELECT * FROM divisi ORDER BY nama_divisi");
 $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
 ?>
@@ -191,6 +317,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
 <body>
     <div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div></div>
 
+    <!-- SIDEBAR -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <i class="fas fa-building"></i>
@@ -232,6 +359,16 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 <i class="fas fa-user"></i>
                 <span>Profile</span>
             </a>
+            <a href="?page=pengumuman" class="nav-item <?= $page=='pengumuman'?'active':'' ?>">
+                <i class="fas fa-bullhorn"></i>
+                <span>Pengumuman</span>
+                <?php 
+                $unreadPengumuman = getUnreadPengumumanCount($conn, $_SESSION['user_id']);
+                if ($unreadPengumuman > 0): 
+                ?>
+                    <span class="badge"><?= $unreadPengumuman ?></span>
+                <?php endif; ?>
+            </a>
             <a href="logout.php" class="nav-item">
                 <i class="fas fa-sign-out-alt"></i>
                 <span>Logout</span>
@@ -239,7 +376,10 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
         </div>
     </div>
 
+    <!-- MAIN CONTENT -->
     <div class="main-content">
+        
+        <!-- NAVBAR -->
         <div class="navbar">
             <div class="nav-left">
                 <button class="toggle-sidebar" onclick="toggleSidebar()">
@@ -248,13 +388,28 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 <span class="breadcrumb">Dashboard / <?= ucfirst($page) ?></span>
             </div>
             <div class="nav-right">
+                <div class="nav-icon" onclick="openModal('notifModal')" style="position:relative">
+                    <i class="fas fa-bell"></i>
+                    <?php if ($notifCount > 0): ?>
+                        <span class="notif-count"><?= $notifCount ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="nav-icon" onclick="openModal('notifModal')" style="position:relative">
+                    <i class="fas fa-bullhorn"></i>
+                    <?php if ($unreadPengumuman > 0): ?>
+                        <span class="notif-count"><?= $unreadPengumuman ?></span>
+                    <?php endif; ?>
+                </div>
                 <div class="nav-icon" onclick="toggleDarkMode()">
                     <i class="fas fa-moon"></i>
                 </div>
             </div>
         </div>
 
+        <!-- CONTENT AREA -->
         <div class="content">
+
+            <!-- PAGE: DASHBOARD -->
             <?php if ($page == 'dashboard'): ?>
                 <h1 class="page-title">Dashboard Atasan</h1>
                 <p class="page-subtitle">Overview performa tim dan aktivitas karyawan</p>
@@ -291,13 +446,13 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 </div>
 
                 <div class="card">
-                    <div class="card-header">
-                        <span class="card-title"><i class="fas fa-chart-bar"></i> Grafik Absensi Mingguan - Karyawan Bawahan</span>
-                    </div>
-                    <div class="chart-container">
-                        <canvas id="absensiChart"></canvas>
-                    </div>
-                </div>
+    <div class="card-header">
+        <span class="card-title"><i class="fas fa-chart-bar"></i> Grafik Absensi Mingguan - Karyawan Bawahan</span>
+    </div>
+    <div class="chart-container">
+        <canvas id="absensiChart"></canvas>
+    </div>
+</div>
 
                 <?php
                 $days = []; $hadirData = []; $telatData = []; $izinData = [];
@@ -309,7 +464,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                     $izinData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status IN ('izin','sakit') AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
                 }
                 ?>
-
+                            <!-- PAGE: KARYAWAN SAYA -->
             <?php elseif ($page == 'karyawan-saya'): ?>
                 <h1 class="page-title">Karyawan Saya</h1>
                 <p class="page-subtitle">Daftar karyawan yang menjadi bawahan Anda</p>
@@ -396,6 +551,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                     </div>
                 </div>
 
+            <!-- PAGE: ABSENSI -->
             <?php elseif ($page == 'absensi'): ?>
                 <h1 class="page-title">Data Absensi Karyawan</h1>
                 <p class="page-subtitle">Monitoring kehadiran karyawan bawahan</p>
@@ -453,6 +609,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                     </div>
                 </div>
 
+            <!-- PAGE: REQUEST -->
             <?php elseif ($page == 'request'): ?>
                 <h1 class="page-title">Request System</h1>
                 <p class="page-subtitle">Kelola permintaan izin, cuti, sakit, dan lembur karyawan bawahan</p>
@@ -523,6 +680,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                     </div>
                 </div>
 
+            <!-- PAGE: KPI -->
             <?php elseif ($page == 'kpi'): ?>
                 <h1 class="page-title">Penilaian KPI</h1>
                 <p class="page-subtitle">Beri penilaian kinerja karyawan bawahan</p>
@@ -621,69 +779,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                         </table>
                     </div>
                 </div>
-
-                <!-- HISTORY PENILAIAN KPI -->
-                <div class="card" style="margin-top: 25px;">
-                    <div class="card-header">
-                        <span class="card-title"><i class="fas fa-history"></i> History Penilaian KPI</span>
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table" id="historyKpiTable">
-                            <thead>
-                                <tr>
-                                    <th>No</th>
-                                    <th>Karyawan</th>
-                                    <th>Periode</th>
-                                    <th>Target</th>
-                                    <th>Nilai</th>
-                                    <th>Komentar</th>
-                                    <th>Dinilai Oleh</th>
-                                    <th>Tanggal</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php
-                                $historyKpiQuery = "SELECT k.*, u.nama as karyawan_nama, a.nama as atasan_nama 
-                                                   FROM kpi k 
-                                                   JOIN users u ON k.user_id = u.id 
-                                                   LEFT JOIN users a ON k.created_by = a.id 
-                                                   ORDER BY k.created_at DESC";
-                                $historyKpiResult = $conn->query($historyKpiQuery);
-                                $no = 1;
-                                if ($historyKpiResult && $historyKpiResult->num_rows > 0):
-                                    while ($row = $historyKpiResult->fetch_assoc()):
-                                ?>
-                                <tr>
-                                    <td><?= $no++ ?></td>
-                                    <td><?= htmlspecialchars($row['karyawan_nama']) ?></td>
-                                    <td><?= htmlspecialchars($row['periode']) ?></td>
-                                    <td><?= $row['target'] ?>%</td>
-                                    <td>
-                                        <span class="badge badge-<?= $row['nilai']>=80?'success':($row['nilai']>=60?'warning':'danger') ?>">
-                                            <?= $row['nilai'] ?>
-                                        </span>
-                                    </td>
-                                    <td><?= htmlspecialchars($row['komentar'] ?? '-') ?></td>
-                                    <td><?= htmlspecialchars($row['atasan_nama'] ?? 'System') ?></td>
-                                    <td><?= date('d/m/Y H:i', strtotime($row['created_at'])) ?></td>
-                                </tr>
-                                <?php 
-                                    endwhile;
-                                else:
-                                ?>
-                                <tr>
-                                    <td colspan="9" style="text-align: center; padding: 20px; color: #6b7280;">
-                                        <i class="fas fa-inbox" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
-                                        Belum ada history penilaian KPI
-                                    </td>
-                                </tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <!-- END HISTORY PENILAIAN KPI -->
-
+                            <!-- PAGE: PROFILE -->
             <?php elseif ($page == 'profile'): ?>
                 <h1 class="page-title">Profile Atasan</h1>
                 <p class="page-subtitle">Kelola informasi akun Anda</p>
@@ -813,11 +909,287 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                         </button>
                     </form>
                 </div>
+
+            <!-- PAGE: PENGUMUMAN -->
+            <?php elseif ($page == 'pengumuman'): ?>
+                <h1 class="page-title">Pengumuman</h1>
+                <p class="page-subtitle">Lihat pengumuman & kirim ke divisi <?= htmlspecialchars($user['nama_divisi']) ?></p>
+
+                <?php if (isset($_GET['success'])): ?>
+                    <div style="background:#d1fae5;color:#065f46;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #10b981">
+                        <i class="fas fa-check-circle"></i> 
+                        <?php 
+                        switch($_GET['success']) {
+                            case 'added': echo 'Pengumuman berhasil dikirim!'; break;
+                            case 'updated': echo 'Pengumuman berhasil diperbarui!'; break;
+                            case 'deleted': echo 'Pengumuman berhasil dihapus!'; break;
+                            default: echo 'Operasi berhasil!';
+                        }
+                        ?>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Tab Navigation -->
+                <div style="display:flex;gap:10px;margin-bottom:20px;border-bottom:2px solid #e2e8f0">
+                    <button class="btn btn-<?= !isset($_GET['tab']) || $_GET['tab']=='semua' ? 'primary' : 'secondary' ?>" 
+                            onclick="window.location.href='?page=pengumuman&tab=semua'" style="border-radius:8px 8px 0 0">
+                        <i class="fas fa-inbox"></i> Semua Pengumuman
+                    </button>
+                    <button class="btn btn-<?= isset($_GET['tab']) && $_GET['tab']=='kirim' ? 'primary' : 'secondary' ?>" 
+                            onclick="window.location.href='?page=pengumuman&tab=kirim'" style="border-radius:8px 8px 0 0">
+                        <i class="fas fa-paper-plane"></i> Kirim Pengumuman
+                    </button>
+                    <button class="btn btn-<?= isset($_GET['tab']) && $_GET['tab']=='saya' ? 'primary' : 'secondary' ?>" 
+                            onclick="window.location.href='?page=pengumuman&tab=saya'" style="border-radius:8px 8px 0 0">
+                        <i class="fas fa-user-edit"></i> Pengumuman Saya
+                    </button>
+                </div>
+
+                <?php 
+                $tab = $_GET['tab'] ?? 'semua';
+                
+                if ($tab == 'semua'): 
+                    $allPengumuman = getPengumumanForUser($conn, $_SESSION['user_id'], 'atasan', $atasanDivisi);
+                ?>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fas fa-inbox"></i> Semua Pengumuman</span>
+                    </div>
+                    <div style="padding:20px">
+                        <?php 
+                        $hasData = false;
+                        while ($row = $allPengumuman->fetch_assoc()): 
+                            $hasData = true;
+                            $isRead = isPengumumanRead($conn, $row['id'], $_SESSION['user_id']);
+                            $isExpired = $row['tanggal_kadaluarsa'] && strtotime($row['tanggal_kadaluarsa']) < strtotime(date('Y-m-d'));
+                        ?>
+                        <div style="padding:20px;border-bottom:1px solid #e2e8f0;<?= $isRead ? '' : 'background:#f0fdf4;border-left:4px solid #10b981' ?>">
+                            <div style="display:flex;justify-content:space-between;align-items:start;gap:15px">
+                                <div style="flex:1">
+                                    <h4 style="font-size:16px;margin-bottom:8px">
+                                        <?php if (!$isRead): ?><span class="badge badge-success" style="margin-right:8px">Baru</span><?php endif; ?>
+                                        <?= htmlspecialchars($row['judul']) ?>
+                                    </h4>
+                                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                                        <span class="badge badge-<?= $row['tipe_target']=='semua'?'primary':'warning' ?>">
+                                            <?= $row['tipe_target']=='semua'?'Semua':'Div: '.htmlspecialchars($row['nama_divisi']) ?>
+                                        </span>
+                                        <span class="badge badge-info">
+                                            <i class="fas fa-user"></i> <?= htmlspecialchars($row['pengirim']) ?>
+                                        </span>
+                                        <span class="badge badge-secondary">
+                                            <i class="fas fa-clock"></i> <?= date('d/m/Y', strtotime($row['created_at'])) ?>
+                                        </span>
+                                        <?php if ($isExpired): ?>
+                                        <span class="badge badge-danger">Expired</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <p style="color:#4b5563;font-size:14px;line-height:1.6">
+                                        <?= nl2br(htmlspecialchars(substr($row['isi'], 0, 200))) ?><?= strlen($row['isi']) > 200 ? '...' : '' ?>
+                                    </p>
+                                </div>
+                                <button class="btn btn-info btn-sm" onclick="viewPengumumanDetail(<?= $row['id'] ?>)" style="white-space:nowrap">
+                                    <i class="fas fa-eye"></i> Baca
+                                </button>
+                            </div>
+                        </div>
+                        <?php endwhile; ?>
+                        
+                        <?php if (!$hasData): ?>
+                        <div style="text-align:center;padding:40px;color:#6b7280">
+                            <i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>
+                            <p>Tidak ada pengumuman</p>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <?php elseif ($tab == 'kirim'): ?>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fas fa-paper-plane"></i> Kirim Pengumuman ke Divisi <?= htmlspecialchars($user['nama_divisi']) ?></span>
+                    </div>
+                    <form method="POST" enctype="multipart/form-data" style="padding:25px" onsubmit="return validateForm('formKirim')" id="formKirim">
+                        <div class="form-group">
+                            <label>Judul Pengumuman</label>
+                            <input type="text" name="judul" class="form-control" required placeholder="Masukkan judul pengumuman...">
+                        </div>
+                        <div class="form-group">
+                            <label>Isi Pengumuman</label>
+                            <textarea name="isi" class="form-control" rows="8" required placeholder="Tulis isi pengumuman lengkap..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Target</label>
+                            <div class="form-control" style="background:#f3f4f6;cursor:not-allowed">
+                                <i class="fas fa-building"></i> Divisi <?= htmlspecialchars($user['nama_divisi']) ?> (Karyawan Bawahan & Divisi)
+                            </div>
+                            <input type="hidden" name="tipe_target" value="divisi">
+                        </div>
+                        <div class="form-group">
+                            <label>Tanggal Kadaluarsa (Opsional)</label>
+                            <input type="date" name="tanggal_kadaluarsa" class="form-control">
+                            <small style="color:#6b7280">Pengumuman akan otomatis hilang setelah tanggal ini</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Lampiran File (Opsional)</label>
+                            <input type="file" name="file_lampiran" class="form-control" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                            <small style="color:#6b7280">Max 5MB</small>
+                        </div>
+                        <button type="submit" name="tambah_pengumuman" class="btn btn-primary">
+                            <i class="fas fa-paper-plane"></i> Kirim Pengumuman
+                        </button>
+                    </form>
+                </div>
+
+                <?php elseif ($tab == 'saya'): ?>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fas fa-list"></i> Pengumuman yang Saya Buat</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Judul</th>
+                                    <th>Tanggal</th>
+                                    <th>Kadaluarsa</th>
+                                    <th>Dibaca</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php 
+                                $hasData = false;
+                                while ($row = $myPengumuman->fetch_assoc()): 
+                                    $hasData = true;
+                                ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($row['judul']) ?></td>
+                                    <td><?= date('d/m/Y', strtotime($row['created_at'])) ?></td>
+                                    <td>
+                                        <?php if ($row['tanggal_kadaluarsa']): ?>
+                                            <?= date('d/m/Y', strtotime($row['tanggal_kadaluarsa'])) ?>
+                                        <?php else: ?>
+                                            <span class="badge badge-secondary">Tidak ada</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-success">
+                                            <i class="fas fa-eye"></i> <?= $row['read_count'] ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-warning btn-sm" onclick="editPengumuman(<?= htmlspecialchars(json_encode($row)) ?>)" title="Edit">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <a href="?page=pengumuman&tab=saya&hapus_pengumuman=<?= $row['id'] ?>" 
+                                           class="btn btn-danger btn-sm" 
+                                           onclick="return confirm('Yakin hapus?')"
+                                           title="Hapus">
+                                            <i class="fas fa-trash"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                <?php endwhile; ?>
+                                <?php if (!$hasData): ?>
+                                <tr>
+                                    <td colspan="5" style="text-align:center;padding:40px;color:#6b7280">
+                                        <i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>
+                                        Belum ada pengumuman yang Anda buat
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- MODAL: Edit Pengumuman -->
+                <div class="modal-overlay" id="editPengumumanModal">
+                    <div class="modal" style="max-width:700px">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-edit"></i> Edit Pengumuman</h3>
+                            <button class="modal-close" onclick="closeModal('editPengumumanModal')">&times;</button>
+                        </div>
+                        <form method="POST" enctype="multipart/form-data" id="editPengumumanForm">
+                            <input type="hidden" name="pengumuman_id" id="editPengumumanId">
+                            <div class="modal-body">
+                                <div class="form-group">
+                                    <label>Judul</label>
+                                    <input type="text" name="judul" id="editPengumumanJudul" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Isi</label>
+                                    <textarea name="isi" id="editPengumumanIsi" class="form-control" rows="6" required></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label>Tanggal Kadaluarsa</label>
+                                    <input type="date" name="tanggal_kadaluarsa" id="editTanggalKadaluarsa" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label>Lampiran Baru (Opsional)</label>
+                                    <input type="file" name="file_lampiran" class="form-control">
+                                    <div id="editFileInfo" style="margin-top:8px;font-size:13px"></div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" onclick="closeModal('editPengumumanModal')">Batal</button>
+                                <button type="submit" name="edit_pengumuman" class="btn btn-primary">
+                                    <i class="fas fa-save"></i> Simpan
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <?php endif; ?>
+
+                <!-- MODAL: Detail Pengumuman -->
+                <div class="modal-overlay" id="detailPengumumanModal">
+                    <div class="modal" style="max-width:800px">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-info-circle"></i> Detail Pengumuman</h3>
+                            <button class="modal-close" onclick="closeModal('detailPengumumanModal')">&times;</button>
+                        </div>
+                        <div class="modal-body" id="detailPengumumanContent"></div>
+                    </div>
+                </div>
+
+                <script>
+                function viewPengumumanDetail(id) {
+                    fetch('ajax_pengumuman_detail.php?id=' + id)
+                        .then(response => response.text())
+                        .then(html => {
+                            document.getElementById('detailPengumumanContent').innerHTML = html;
+                            openModal('detailPengumumanModal');
+                        });
+                }
+                
+                function editPengumuman(data) {
+                    document.getElementById('editPengumumanId').value = data.id;
+                    document.getElementById('editPengumumanJudul').value = data.judul;
+                    document.getElementById('editPengumumanIsi').value = data.isi;
+                    document.getElementById('editTanggalKadaluarsa').value = data.tanggal_kadaluarsa || '';
+                    
+                    if (data.file_lampiran) {
+                        document.getElementById('editFileInfo').innerHTML = 
+                            '<i class="fas fa-paperclip"></i> File: <a href="' + data.file_lampiran + '" target="_blank">' + data.file_lampiran.split('/').pop() + '</a>';
+                    } else {
+                        document.getElementById('editFileInfo').innerHTML = 'Tidak ada file lampiran';
+                    }
+                    
+                    openModal('editPengumumanModal');
+                }
+                </script>
+
             <?php endif; ?>
+            <!-- END CONTENT PAGES -->
         </div>
     </div>
-
-    <!-- Approve Modal -->
+        <!-- MODAL: Approve Request -->
     <div class="modal-overlay" id="approveModal">
         <div class="modal">
             <div class="modal-header">
@@ -843,7 +1215,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
         </div>
     </div>
 
-    <!-- Reject Modal -->
+    <!-- MODAL: Reject Request -->
     <div class="modal-overlay" id="rejectModal">
         <div class="modal">
             <div class="modal-header">
@@ -869,7 +1241,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
         </div>
     </div>
 
-    <!-- Notif Modal -->
+    <!-- MODAL: Notifikasi -->
     <div class="modal-overlay" id="notifModal">
         <div class="modal">
             <div class="modal-header">
@@ -895,6 +1267,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
         </div>
     </div>
 
+    <!-- JAVASCRIPT -->
     <script src="js/script.js"></script>
     <script>
         function openApproveModal(id, nama, jenis) {
@@ -903,12 +1276,14 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
             document.getElementById('approveJenis').textContent = jenis;
             openModal('approveModal');
         }
+        
         function openRejectModal(id, nama, jenis) {
             document.getElementById('rejectId').value = id;
             document.getElementById('rejectNama').textContent = nama;
             document.getElementById('rejectJenis').textContent = jenis;
             openModal('rejectModal');
         }
+        
         function filterDate(date) {
             const table = document.getElementById('absensiTable');
             if (!table) return;
@@ -921,6 +1296,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 }
             }
         }
+        
         function previewImage(input) {
             if (input.files && input.files[0]) {
                 var reader = new FileReader();
@@ -930,6 +1306,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 reader.readAsDataURL(input.files[0]);
             }
         }
+        
         function togglePass(id, icon) {
             const input = document.getElementById(id);
             if (input.type === 'password') {
@@ -940,6 +1317,28 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 input.type = 'password';
                 icon.classList.remove('fa-eye-slash');
                 icon.classList.add('fa-eye');
+            }
+        }
+        
+        function searchTable(inputId, tableId) {
+            var input = document.getElementById(inputId);
+            var filter = input.value.toLowerCase();
+            var table = document.getElementById(tableId);
+            var tr = table.getElementsByTagName('tr');
+
+            for (var i = 1; i < tr.length; i++) {
+                var td = tr[i].getElementsByTagName('td');
+                var found = false;
+                for (var j = 0; j < td.length; j++) {
+                    if (td[j]) {
+                        var txtValue = td[j].textContent || td[j].innerText;
+                        if (txtValue.toLowerCase().indexOf(filter) > -1) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                tr[i].style.display = found ? '' : 'none';
             }
         }
     </script>
@@ -964,6 +1363,48 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                         maintainAspectRatio: false,
                         plugins: { legend: { position: 'top' } },
                         scales: { y: { beginAtZero: true } }
+                    }
+                });
+            }
+        });
+    </script>
+    <?php endif; ?>
+        <?php if ($page == 'dashboard'): ?>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('absensiChart');
+            if (ctx) {
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: <?= json_encode($days) ?>,
+                        datasets: [
+                            { 
+                                label: 'Hadir', 
+                                data: <?= json_encode($hadirData) ?>, 
+                                backgroundColor: '#10b981' 
+                            },
+                            { 
+                                label: 'Telat', 
+                                data: <?= json_encode($telatData) ?>, 
+                                backgroundColor: '#f59e0b' 
+                            },
+                            { 
+                                label: 'Izin/Sakit', 
+                                data: <?= json_encode($izinData) ?>, 
+                                backgroundColor: '#3b82f6' 
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { 
+                            legend: { position: 'top' } 
+                        },
+                        scales: { 
+                            y: { beginAtZero: true } 
+                        }
                     }
                 });
             }

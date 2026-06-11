@@ -187,3 +187,15 @@ if (typeof Chart !== 'undefined') {
     Chart.defaults.font.family = "'Segoe UI', sans-serif";
     Chart.defaults.color = '#64748b';
 }
+// Auto reload badge count setelah baca pengumuman
+function refreshPengumumanBadge() {
+    fetch('ajax_unread_count.php')
+        .then(r => r.json())
+        .then(data => {
+            const badges = document.querySelectorAll('.nav-item .badge, .nav-icon .notif-count');
+            badges.forEach(b => {
+                if (data.count > 0) b.textContent = data.count;
+                else b.style.display = 'none';
+            });
+        });
+}
