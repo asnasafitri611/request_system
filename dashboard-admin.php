@@ -204,21 +204,24 @@ if (isset($_GET['aktifkan_user'])) {
 // HANDLE MANAJEMEN ATASAN
 // ============================================
 
-// Assign karyawan ke atasan
+// Assign karyawan/atasan ke atasan parent
 if (isset($_POST['assign_karyawan'])) {
     $karyawanId = (int) $_POST['karyawan_id'];
     $atasanId = (int) $_POST['atasan_id'];
     
-    $stmt = $conn->prepare("UPDATE users SET atasan_id = ? WHERE id = ? AND role = 'karyawan'");
+    // Update atasan_id untuk user yang dipilih (bisa karyawan atau atasan)
+    $stmt = $conn->prepare("UPDATE users SET atasan_id = ? WHERE id = ?");
     $stmt->bind_param("ii", $atasanId, $karyawanId);
     $stmt->execute();
     
+    // Notifikasi ke parent atasan
     $stmt = $conn->prepare("SELECT nama FROM users WHERE id = ?");
     $stmt->bind_param("i", $karyawanId);
     $stmt->execute();
     $karyawan = $stmt->get_result()->fetch_assoc();
     
-    addNotification($conn, $atasanId, 'Karyawan Baru', $karyawan['nama'] . ' telah ditugaskan sebagai karyawan Anda');
+    addNotification($conn, $atasanId, 'Bawahan Baru', 
+        $karyawan['nama'] . ' telah ditugaskan sebagai bawahan Anda');
     
     header("Location: dashboard-admin.php?page=manajemen-atasan&success=assigned");
     exit;
@@ -341,6 +344,7 @@ if (isset($_POST['update_profile'])) {
         }
     }
 }
+
 // ============================================
 // HANDLE GANTI PASSWORD PROFILE
 // ============================================
@@ -662,7 +666,6 @@ if (isset($_GET['generate_laporan']) && $_GET['generate_laporan'] == 'csv') {
     fclose($output);
     exit;
 }
-
 // ============================================
 // HANDLE LAPORAN ABSENSI PDF
 // ============================================
@@ -1022,6 +1025,7 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                 <span class="breadcrumb">Dashboard / <?= ucfirst($page) ?></span>
             </div>
             <div class="nav-right">
+                <!-- PERBAIKAN TYPO FATAL: Baris ini sebelumnya rusak -->
                 <div class="nav-icon" onclick="openModal('notifModal')" style="position:relative">
                     <i class="fas fa-bell"></i>
                     <?php if ($notifCount > 0): ?>
@@ -1200,43 +1204,24 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                     </div>
                 <?php endif; ?>
 
-                <div class="stats-grid" style="margin-bottom:20px">
-                    <div class="stat-card">
-                        <div class="stat-icon blue"><i class="fas fa-user-shield"></i></div>
-                        <div class="stat-info">
-                            <h3><?= $totalAtasanAktif ?></h3>
-                            <p>Total Atasan Aktif</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon green"><i class="fas fa-user-check"></i></div>
-                        <div class="stat-info">
-                            <h3><?= $totalKaryawanDenganAtasan ?></h3>
-                            <p>Karyawan Punya Atasan</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon orange"><i class="fas fa-user-plus"></i></div>
-                        <div class="stat-info">
-                            <h3><?= $totalKaryawanTanpaAtasan ?></h3>
-                            <p>Karyawan Belum Punya Atasan</p>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="card" style="margin-bottom:25px">
                     <div class="card-header">
-                        <span class="card-title"><i class="fas fa-user-plus"></i> Assign Karyawan ke Atasan</span>
+                        <span class="card-title"><i class="fas fa-user-plus"></i> Assign Karyawan/Atasan ke Atasan</span>
                     </div>
                     <form method="POST" style="padding:20px">
                         <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:15px;align-items:end">
                             <div>
-                                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Pilih Atasan</label>
+                                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Pilih Atasan (Parent)</label>
                                 <select name="atasan_id" class="form-control" required style="width:100%">
                                     <option value="">-- Pilih Atasan --</option>
                                     <?php 
-                                    $atasanList = getDaftarAtasan($conn);
-                                    while ($a = $atasanList->fetch_assoc()): 
+                                    $allAtasan = $conn->query("SELECT u.*, d.nama_divisi, j.nama_jabatan 
+                                                               FROM users u 
+                                                               LEFT JOIN divisi d ON u.divisi_id = d.id 
+                                                               LEFT JOIN jabatan j ON u.jabatan_id = j.id 
+                                                               WHERE u.status = 'aktif' AND (u.role = 'atasan' OR u.role = 'admin')
+                                                               ORDER BY j.id DESC, u.nama ASC");
+                                    while ($a = $allAtasan->fetch_assoc()): 
                                     ?>
                                     <option value="<?= $a['id'] ?>">
                                         <?= htmlspecialchars($a['nama']) ?> 
@@ -1246,9 +1231,9 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                                 </select>
                             </div>
                             <div>
-                                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Pilih Karyawan</label>
+                                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Pilih Bawahan (Child)</label>
                                 <select name="karyawan_id" class="form-control" required style="width:100%">
-                                    <option value="">-- Pilih Karyawan --</option>
+                                    <option value="">-- Pilih Bawahan --</option>
                                     <optgroup label="Karyawan Belum Punya Atasan">
                                         <?php 
                                         $karyawanFree = getKaryawanTanpaAtasan($conn);
@@ -1260,14 +1245,31 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                                         </option>
                                         <?php endwhile; ?>
                                     </optgroup>
-                                    <optgroup label="Karyawan Sudah Punya Atasan (Pindah)">
+                                    <optgroup label="Atasan Belum Punya Atasan (Untuk Hierarki)">
+                                        <?php 
+                                        $atasanFree = $conn->query("SELECT u.*, d.nama_divisi, j.nama_jabatan 
+                                                                   FROM users u 
+                                                                   LEFT JOIN divisi d ON u.divisi_id = d.id 
+                                                                   LEFT JOIN jabatan j ON u.jabatan_id = j.id 
+                                                                   WHERE u.role = 'atasan' AND u.status = 'aktif' 
+                                                                   AND (u.atasan_id IS NULL OR u.atasan_id = 0)
+                                                                   ORDER BY u.nama ASC");
+                                        while ($k = $atasanFree->fetch_assoc()): 
+                                        ?>
+                                        <option value="<?= $k['id'] ?>">
+                                            <?= htmlspecialchars($k['nama']) ?> 
+                                            (<?= htmlspecialchars($k['nama_jabatan'] ?? '-') ?>)
+                                        </option>
+                                        <?php endwhile; ?>
+                                    </optgroup>
+                                    <optgroup label="Sudah Punya Atasan (Pindah)">
                                         <?php 
                                         $karyawanAssigned = $conn->query("SELECT u.*, d.nama_divisi, j.nama_jabatan, a.nama as nama_atasan 
                                             FROM users u 
                                             LEFT JOIN divisi d ON u.divisi_id = d.id 
                                             LEFT JOIN jabatan j ON u.jabatan_id = j.id 
                                             LEFT JOIN users a ON u.atasan_id = a.id 
-                                            WHERE u.role = 'karyawan' AND u.status = 'aktif' AND u.atasan_id IS NOT NULL AND u.atasan_id > 0
+                                            WHERE u.status = 'aktif' AND u.atasan_id IS NOT NULL AND u.atasan_id > 0
                                             ORDER BY u.nama ASC");
                                         while ($k = $karyawanAssigned->fetch_assoc()): 
                                         ?>
@@ -1285,7 +1287,7 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                         </div>
                     </form>
                 </div>
-
+                
                 <div class="card">
                     <div class="card-header">
                         <span class="card-title"><i class="fas fa-sitemap"></i> Struktur Atasan & Karyawan</span>
@@ -1310,7 +1312,16 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                                 <?php
                                 $atasanList = getDaftarAtasan($conn);
                                 while ($atasan = $atasanList->fetch_assoc()):
-                                    $bawahan = getKaryawanByAtasanId($conn, $atasan['id']);
+                                    // Ambil SEMUA bawahan (karyawan + atasan) tanpa filter role
+                                    $stmt = $conn->prepare("SELECT u.*, d.nama_divisi, j.nama_jabatan 
+                                                            FROM users u 
+                                                            LEFT JOIN divisi d ON u.divisi_id = d.id 
+                                                            LEFT JOIN jabatan j ON u.jabatan_id = j.id 
+                                                            WHERE u.atasan_id = ? AND u.status = 'aktif'
+                                                            ORDER BY u.nama ASC");
+                                    $stmt->bind_param("i", $atasan['id']);
+                                    $stmt->execute();
+                                    $bawahan = $stmt->get_result();
                                     $jumlahBawahan = $bawahan->num_rows;
                                     $bawahanNames = [];
                                     while ($b = $bawahan->fetch_assoc()) {
@@ -1331,13 +1342,24 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                                     </td>
                                     <td><?= htmlspecialchars($atasan['nama_jabatan'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($atasan['nama_divisi'] ?? '-') ?></td>
+                                    <!-- PERBAIKAN TYPO FATAL: Sebelumnya ada "p else: ?>" dan "<<td>" yang rusak -->
                                     <td>
                                         <?php if ($jumlahBawahan > 0): ?>
                                             <div style="display:flex;flex-wrap:wrap;gap:5px">
                                                 <?php while ($b = $bawahan->fetch_assoc()): ?>
-                                                <span style="background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:12px;font-size:12px;display:inline-flex;align-items:center;gap:5px">
+                                                <span style="background:<?= $b['role']=='atasan' ? '#fef3c7' : ($b['role']=='admin' ? '#fee2e2' : '#dbeafe') ?>;color:<?= $b['role']=='atasan' ? '#92400e' : ($b['role']=='admin' ? '#991b1b' : '#1e40af') ?>;padding:4px 10px;border-radius:12px;font-size:12px;display:inline-flex;align-items:center;gap:5px">
                                                     <img src="<?= $b['foto'] ?? 'https://via.placeholder.com/20' ?>" style="width:20px;height:20px;border-radius:50%;object-fit:cover">
                                                     <?= htmlspecialchars($b['nama']) ?>
+                                                    
+                                                    <!-- BADGE ROLE -->
+                                                    <?php if ($b['role'] == 'atasan'): ?>
+                                                        <span style="font-size:9px;background:#f59e0b;color:white;padding:1px 5px;border-radius:4px;font-weight:bold">ATASAN</span>
+                                                    <?php elseif ($b['role'] == 'admin'): ?>
+                                                        <span style="font-size:9px;background:#ef4444;color:white;padding:1px 5px;border-radius:4px;font-weight:bold">ADMIN</span>
+                                                    <?php else: ?>
+                                                        <span style="font-size:9px;background:#3b82f6;color:white;padding:1px 5px;border-radius:4px;font-weight:bold">STAFF</span>
+                                                    <?php endif; ?>
+                                                    
                                                     <a href="?page=manajemen-atasan&hapus_bawahan=<?= $b['id'] ?>&atasan_id=<?= $atasan['id'] ?>" 
                                                        style="color:#dc2626;text-decoration:none;margin-left:3px"
                                                        onclick="return confirm('Hapus <?= htmlspecialchars($b['nama']) ?> dari daftar bawahan?')"
@@ -1525,8 +1547,7 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                         </table>
                     </div>
                 </div>
-
-            <!-- PAGE: LAPORAN -->
+                            <!-- PAGE: LAPORAN -->
             <?php elseif ($page == 'laporan'): ?>
                 <h1 class="page-title">Laporan</h1>
                 <p class="page-subtitle">Cetak laporan absensi dengan filter periode</p>
@@ -1738,7 +1759,8 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                     window.open(url, '_blank');
                 }
                 </script>
-                            <!-- PAGE: PROFILE -->
+
+            <!-- PAGE: PROFILE -->
             <?php elseif ($page == 'profile'): ?>
                 <h1 class="page-title">Profile Admin</h1>
                 <p class="page-subtitle">Kelola informasi akun administrator Anda</p>
@@ -2196,7 +2218,8 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
             <!-- END CONTENT PAGES -->
         </div>
     </div>
-        <!-- MODALS (Shared across pages) -->
+
+    <!-- MODALS (Shared across pages) -->
 
     <!-- ADD USER MODAL -->
     <div class="modal-overlay" id="addUserModal">

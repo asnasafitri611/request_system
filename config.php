@@ -54,7 +54,7 @@ function getKaryawanByAtasan($conn, $atasanId) {
                             FROM users u 
                             LEFT JOIN divisi d ON u.divisi_id = d.id 
                             LEFT JOIN jabatan j ON u.jabatan_id = j.id 
-                            WHERE u.atasan_id = ? AND u.role = 'karyawan' AND u.status = 'aktif'
+                            WHERE u.atasan_id = ? AND u.status = 'aktif'
                             ORDER BY u.nama ASC");
     $stmt->bind_param("i", $atasanId);
     $stmt->execute();
@@ -99,7 +99,7 @@ function getKaryawanByAtasanId($conn, $atasanId) {
                             FROM users u 
                             LEFT JOIN divisi d ON u.divisi_id = d.id 
                             LEFT JOIN jabatan j ON u.jabatan_id = j.id 
-                            WHERE u.atasan_id = ? AND u.role = 'karyawan'
+                            WHERE u.atasan_id = ? AND u.status = 'aktif'
                             ORDER BY u.nama ASC");
     $stmt->bind_param("i", $atasanId);
     $stmt->execute();
@@ -110,7 +110,7 @@ function getKaryawanByAtasanId($conn, $atasanId) {
  * Cek apakah karyawan adalah bawahan atasan tertentu
  */
 function isBawahan($conn, $karyawanId, $atasanId) {
-    $stmt = $conn->prepare("SELECT id FROM users WHERE id = ? AND atasan_id = ? AND role = 'karyawan'");
+    $stmt = $conn->prepare("SELECT id FROM users WHERE id = ? AND atasan_id = ? AND status = 'aktif'");
     $stmt->bind_param("ii", $karyawanId, $atasanId);
     $stmt->execute();
     return $stmt->get_result()->num_rows > 0;
@@ -286,7 +286,7 @@ function isPengumumanRead($conn, $pengumumanId, $userId) {
  * Get read count untuk pengumuman
  */
 function getPengumumanReadCount($conn, $pengumumanId) {
-    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM pengumuman_read WHERE pengumuman_id = ?");
+   $stmt = $conn->prepare("SELECT COUNT(*) as total FROM  pengumuman_read WHERE pengumuman_id = ?");
     $stmt->bind_param("i", $pengumumanId);
     $stmt->execute();
     return $stmt->get_result()->fetch_assoc()['total'];
@@ -338,5 +338,260 @@ function getPengumumanDetail($conn, $pengumumanId, $userId) {
     $stmt->bind_param($types, ...$params);
     $stmt->execute();
     return $stmt->get_result()->fetch_assoc();
+}
+// ============================================
+// HIERARCHY MULTI-LEVEL FUNCTIONS
+// ============================================
+
+/**
+ * Get chain of superiors from a user up to top
+ * Returns array: [user_id => user_data]
+ */
+function getHierarchyChain($conn, $userId) {
+    $chain = [];
+    $visited = [];
+    $currentId = $userId;
+    
+    while ($currentId && !in_array($currentId, $visited)) {
+        $visited[] = $currentId;
+        $stmt = $conn->prepare("SELECT u.*, d.nama_divisi, j.nama_jabatan, j.id as jabatan_id 
+                                FROM users u 
+                                LEFT JOIN divisi d ON u.divisi_id = d.id 
+                                LEFT JOIN jabatan j ON u.jabatan_id = j.id 
+                                WHERE u.id = ? AND u.status = 'aktif'");
+        $stmt->bind_param("i", $currentId);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if ($result->num_rows == 0) break;
+        
+        $user = $result->fetch_assoc();
+        $chain[] = $user;
+        $currentId = $user['atasan_id'];
+    }
+    
+    return $chain;
+}
+
+/**
+ * Get direct and indirect subordinates (recursive)
+ */
+/**
+ * Get direct and indirect subordinates (recursive) - FIXED
+ */
+function getAllBawahan($conn, $atasanId) {
+    $allBawahan = [];
+    $visited = [];
+    
+    // Gunakan anonymous function/closure untuk recursive
+    $getRecursive = function($parentId, $level = 0) use ($conn, &$allBawahan, &$visited, &$getRecursive) {
+        if (in_array($parentId, $visited)) return;
+        $visited[] = $parentId;
+        
+        $stmt = $conn->prepare("SELECT u.*, d.nama_divisi, j.nama_jabatan 
+                                FROM users u 
+                                LEFT JOIN divisi d ON u.divisi_id = d.id 
+                                LEFT JOIN jabatan j ON u.jabatan_id = j.id 
+                                WHERE u.atasan_id = ? AND u.status = 'aktif'
+                                ORDER BY u.nama ASC");
+        $stmt->bind_param("i", $parentId);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        while ($row = $result->fetch_assoc()) {
+            $row['level'] = $level;
+            $allBawahan[] = $row;
+            // Recursive: get their subordinates too
+            $getRecursive($row['id'], $level + 1);
+        }
+    };
+    
+    $getRecursive($atasanId, 0);
+    return $allBawahan;
+}
+
+/**
+ * Get IDs of all subordinates (for IN queries)
+ */
+function getAllBawahanIds($conn, $atasanId) {
+    $bawahan = getAllBawahan($conn, $atasanId);
+    return array_column($bawahan, 'id');
+}
+
+/**
+ * Get current approver for a request
+ * Returns user data or null
+ */
+function getCurrentApprover($conn, $requestId) {
+    $stmt = $conn->prepare("SELECT r.current_approver_id, u.*, d.nama_divisi, j.nama_jabatan 
+                            FROM request_system r
+                            JOIN users u ON r.current_approver_id = u.id
+                            LEFT JOIN divisi d ON u.divisi_id = d.id 
+                            LEFT JOIN jabatan j ON u.jabatan_id = j.id 
+                            WHERE r.id = ?");
+    $stmt->bind_param("i", $requestId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc();
+}
+
+/**
+ * Check if user can approve/reject a request
+ * User can approve if they are the current_approver_id
+ */
+function canApproveRequest($conn, $requestId, $userId) {
+    $stmt = $conn->prepare("SELECT id FROM request_system 
+                            WHERE id = ? AND current_approver_id = ? AND status = 'pending'");
+    $stmt->bind_param("ii", $requestId, $userId);
+    $stmt->execute();
+    return $stmt->get_result()->num_rows > 0;
+}
+
+/**
+ * Forward request to next approver in hierarchy
+ * Returns true if forwarded, false if fully approved (no more approvers)
+ */
+function forwardRequest($conn, $requestId) {
+    // Get request data
+    $stmt = $conn->prepare("SELECT r.*, u.atasan_id as user_atasan_id 
+                            FROM request_system r 
+                            JOIN users u ON r.user_id = u.id 
+                            WHERE r.id = ?");
+    $stmt->bind_param("i", $requestId);
+    $stmt->execute();
+    $request = $stmt->get_result()->fetch_assoc();
+    
+    if (!$request) return false;
+    
+    // Get current approver's superior
+    $currentApproverId = $request['current_approver_id'];
+    $stmt = $conn->prepare("SELECT atasan_id FROM users WHERE id = ?");
+    $stmt->bind_param("i", $currentApproverId);
+    $stmt->execute();
+    $currentApprover = $stmt->get_result()->fetch_assoc();
+    
+    if (!$currentApprover || !$currentApprover['atasan_id']) {
+        // No more approvers, fully approve
+        return false;
+    }
+    
+    // Forward to next approver
+    $nextApproverId = $currentApprover['atasan_id'];
+    $stmt = $conn->prepare("UPDATE request_system SET current_approver_id = ? WHERE id = ?");
+    $stmt->bind_param("ii", $nextApproverId, $requestId);
+    $stmt->execute();
+    
+    // Notify next approver
+    $stmt = $conn->prepare("SELECT nama FROM users WHERE id = ?");
+    $stmt->bind_param("i", $request['user_id']);
+    $stmt->execute();
+    $requester = $stmt->get_result()->fetch_assoc();
+    
+    addNotification($conn, $nextApproverId, 'Request Perlu Approval', 
+        $requester['nama'] . ' mengajukan ' . $request['jenis_request'] . ' - perlu persetujuan Anda');
+    
+    return true;
+}
+
+/**
+ * Get request with hierarchy info
+ */
+function getRequestWithHierarchy($conn, $requestId) {
+    $stmt = $conn->prepare("SELECT r.*, 
+                            u.nama as requester_name, 
+                            u2.nama as current_approver_name,
+                            u3.nama as original_atasan_name,
+                            d.nama_divisi,
+                            j.nama_jabatan
+                            FROM request_system r
+                            JOIN users u ON r.user_id = u.id
+                            LEFT JOIN users u2 ON r.current_approver_id = u2.id
+                            LEFT JOIN users u3 ON r.atasan_id = u3.id
+                            LEFT JOIN divisi d ON u.divisi_id = d.id
+                            LEFT JOIN jabatan j ON u.jabatan_id = j.id
+                            WHERE r.id = ?");
+    $stmt->bind_param("i", $requestId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc();
+}
+
+/**
+ * Get approval history/status for a request
+ */
+function getApprovalStatus($conn, $requestId) {
+    $request = getRequestWithHierarchy($conn, $requestId);
+    if (!$request) return [];
+    
+    $chain = getHierarchyChain($conn, $request['user_id']);
+    $status = [];
+    
+    foreach ($chain as $level => $person) {
+        $isCurrent = ($request['current_approver_id'] == $person['id'] && $request['status'] == 'pending');
+        $isApproved = ($request['status'] == 'disetujui' && $level == 0) || 
+                      ($request['status'] == 'disetujui' && $request['approved_by'] == $person['id']);
+        $isRejected = ($request['status'] == 'ditolak' && $request['approved_by'] == $person['id']);
+        
+        $status[] = [
+            'level' => $level,
+            'user' => $person,
+            'status' => $isRejected ? 'rejected' : ($isApproved ? 'approved' : ($isCurrent ? 'current' : 'waiting')),
+            'is_current' => $isCurrent,
+            'is_approved' => $isApproved,
+            'is_rejected' => $isRejected
+        ];
+        
+        if ($isRejected || $isCurrent) break;
+    }
+    
+    return $status;
+}
+
+/**
+ * Get all requests where user is current approver (direct or indirect)
+ */
+function getRequestsForApprover($conn, $userId) {
+    $stmt = $conn->prepare("SELECT r.*, 
+                            u.nama, u.email, 
+                            d.nama_divisi, j.nama_jabatan,
+                            u2.nama as current_approver_name
+                            FROM request_system r
+                            JOIN users u ON r.user_id = u.id
+                            LEFT JOIN divisi d ON u.divisi_id = d.id
+                            LEFT JOIN jabatan j ON u.jabatan_id = j.id
+                            LEFT JOIN users u2 ON r.current_approver_id = u2.id
+                            WHERE r.current_approver_id = ? AND r.status = 'pending'
+                            ORDER BY r.created_at DESC");
+    $stmt->bind_param("i", $userId);
+    $stmt->execute();
+    return $stmt->get_result();
+}
+
+/**
+ * Get all requests from user's subordinates (for monitoring)
+ */
+function getAllSubordinateRequests($conn, $atasanId) {
+    $bawahanIds = getAllBawahanIds($conn, $atasanId);
+    if (empty($bawahanIds)) return null;
+    
+    $placeholders = implode(',', array_fill(0, count($bawahanIds), '?'));
+    $types = str_repeat('i', count($bawahanIds));
+    
+    $sql = "SELECT r.*, 
+            u.nama, u.email, 
+            d.nama_divisi, j.nama_jabatan,
+            u2.nama as current_approver_name,
+            u3.nama as original_atasan_name
+            FROM request_system r
+            JOIN users u ON r.user_id = u.id
+            LEFT JOIN divisi d ON u.divisi_id = d.id
+            LEFT JOIN jabatan j ON u.jabatan_id = j.id
+            LEFT JOIN users u2 ON r.current_approver_id = u2.id
+            LEFT JOIN users u3 ON r.atasan_id = u3.id
+            WHERE r.user_id IN ($placeholders)
+            ORDER BY r.created_at DESC";
+    
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$bawahanIds);
+    $stmt->execute();
+    return $stmt->get_result();
 }
 ?>

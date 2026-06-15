@@ -40,6 +40,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
     });
 });
 
+
 // Toast Notification
 function showToast(message, type = 'success') {
     const toast = document.createElement('div');

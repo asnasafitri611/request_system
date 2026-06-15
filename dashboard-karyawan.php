@@ -81,9 +81,23 @@ if (isset($_POST['submit_request'])) {
     $atasan = getAtasanByKaryawan($conn, $_SESSION['user_id']);
     $atasanId = $atasan ? $atasan['id'] : null;
     
-    $stmt = $conn->prepare("INSERT INTO request_system (user_id, atasan_id, jenis_request, tanggal_mulai, tanggal_selesai, alasan, file_bukti) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("iisssss", $_SESSION['user_id'], $atasanId, $jenis, $tgl_mulai, $tgl_selesai, $alasan, $file_bukti);
-    $stmt->execute();
+   // Get atasan_id dari user yang login
+$stmt = $conn->prepare("SELECT atasan_id FROM users WHERE id = ?");
+$stmt->bind_param("i", $_SESSION['user_id']);
+$stmt->execute();
+$userData = $stmt->get_result()->fetch_assoc();
+$atasanId = $userData['atasan_id'];
+
+// Insert dengan current_approver_id = atasan_id (mulai dari atasan langsung)
+$stmt = $conn->prepare("INSERT INTO request_system 
+    (user_id, atasan_id, current_approver_id, jenis_request, tanggal_mulai, tanggal_selesai, alasan, file_bukti) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+$stmt->bind_param("iiisssss", $userId, $atasanId, $atasanId, $jenis, $tglMulai, $tglSelesai, $alasan, $file);
+$stmt->execute();
+
+// Kirim notifikasi ke atasan pertama
+addNotification($conn, $atasanId, 'Request Baru', 
+    $_SESSION['nama'] . ' mengajukan ' . $jenis . ' - perlu persetujuan Anda');
     
     // Notify atasan spesifik (jika ada)
     if ($atasanId) {
