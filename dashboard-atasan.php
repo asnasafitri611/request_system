@@ -463,16 +463,6 @@ $pengumumanCreated = $conn->query("
                 <i class="fas fa-user"></i>
                 <span>Profile</span>
             </a>
-            <a href="?page=pengumuman" class="nav-item <?= $page=='pengumuman'?'active':'' ?>">
-                <i class="fas fa-bullhorn"></i>
-                <span>Pengumuman</span>
-                <?php 
-                $unreadPengumuman = getUnreadPengumumanCount($conn, $_SESSION['user_id']);
-                if ($unreadPengumuman > 0): 
-                ?>
-                    <span class="badge"><?= $unreadPengumuman ?></span>
-                <?php endif; ?>
-            </a>
             <a href="logout.php" class="nav-item">
                 <i class="fas fa-sign-out-alt"></i>
                 <span>Logout</span>

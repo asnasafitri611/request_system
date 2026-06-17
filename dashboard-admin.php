@@ -957,16 +957,6 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                 <i class="fas fa-user"></i>
                 <span>Profile</span>
             </a>
-            <a href="?page=pengumuman" class="nav-item <?= $page=='pengumuman'?'active':'' ?>">
-                <i class="fas fa-bullhorn"></i>
-                <span>Pengumuman</span>
-                <?php 
-                $unreadPengumuman = getUnreadPengumumanCount($conn, $_SESSION['user_id']);
-                if ($unreadPengumuman > 0): 
-                ?>
-                    <span class="badge"><?= $unreadPengumuman ?></span>
-                <?php endif; ?>
-            </a>
             <a href="logout.php" class="nav-item">
                 <i class="fas fa-sign-out-alt"></i>
                 <span>Logout</span>
@@ -990,12 +980,6 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                     <i class="fas fa-bell"></i>
                     <?php if ($notifCount > 0): ?>
                         <span class="notif-count"><?= $notifCount ?></span>
-                    <?php endif; ?>
-                </div>
-                <div class="nav-icon" onclick="openModal('notifModal')" style="position:relative">
-                    <i class="fas fa-bullhorn"></i>
-                    <?php if ($unreadPengumuman > 0): ?>
-                        <span class="notif-count"><?= $unreadPengumuman ?></span>
                     <?php endif; ?>
                 </div>
                 <div class="nav-icon" onclick="toggleDarkMode()">
