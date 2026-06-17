@@ -124,42 +124,25 @@ $myPengumuman = $conn->query("SELECT p.*, d.nama_divisi,
 // ============================================
 // STATS & DATA
 // ============================================
-// ============================================
-// STATS & DATA
-// ============================================
 
 $stmt = $conn->prepare("SELECT COUNT(*) as total FROM users WHERE atasan_id = ? AND role='karyawan' AND status='aktif'");
 $stmt->bind_param("i", $_SESSION['user_id']);
 $stmt->execute();
 $totalKaryawan = $stmt->get_result()->fetch_assoc()['total'];
-// ============================================
-// STATS & DATA (MULTI-LEVEL HIERARCHY)
-// ============================================
 
-// Get all subordinates (direct + indirect)
-$allBawahan = getAllBawahan($conn, $_SESSION['user_id']);
-$totalKaryawan = count($allBawahan);
+$stmt = $conn->prepare("SELECT COUNT(*) as total FROM absensi a 
+                        JOIN users u ON a.user_id = u.id 
+                        WHERE u.atasan_id = ? AND a.tanggal = CURDATE() AND a.status='hadir'");
+$stmt->bind_param("i", $_SESSION['user_id']);
+$stmt->execute();
+$jumlahHadir = $stmt->get_result()->fetch_assoc()['total'];
 
-// Count direct vs indirect for display
-$directBawahan = array_filter($allBawahan, function($b) { return $b['level'] == 0; });
-$indirectBawahan = array_filter($allBawahan, function($b) { return $b['level'] > 0; });
-
-// Hadir hari ini dari semua bawahan (direct + indirect)
-$bawahanIds = getAllBawahanIds($conn, $_SESSION['user_id']);
-if (!empty($bawahanIds)) {
-    $placeholders = implode(',', array_fill(0, count($bawahanIds), '?'));
-    $types = str_repeat('i', count($bawahanIds));
-    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM absensi a 
-                            WHERE a.user_id IN ($placeholders) AND a.tanggal = CURDATE() AND a.status='hadir'");
-    $stmt->bind_param($types, ...$bawahanIds);
-    $stmt->execute();
-    $jumlahHadir = $stmt->get_result()->fetch_assoc()['total'];
-} else {
-    $jumlahHadir = 0;
-}
-
-// Pending requests where I am the current approver
-$pendingRequests = getRequestsForApprover($conn, $_SESSION['user_id'])->num_rows;
+$stmt = $conn->prepare("SELECT COUNT(*) as total FROM request_system r 
+                        JOIN users u ON r.user_id = u.id 
+                        WHERE u.atasan_id = ? AND r.status='pending'");
+$stmt->bind_param("i", $_SESSION['user_id']);
+$stmt->execute();
+$pendingRequests = $stmt->get_result()->fetch_assoc()['total'];
 // ============================================
 // DATA GRAFIK ABSENSI MINGGUAN (untuk Chart.js)
 // ============================================
@@ -176,47 +159,33 @@ for ($i = 6; $i >= 0; $i--) {
 }
 
 $absensiResult = getAbsensiByAtasan($conn, $_SESSION['user_id'], 50);
-// Get requests where current user is the current approver (multi-level hierarchy)
-$requestsResult = getRequestsForApprover($conn, $_SESSION['user_id']);
-
-// Also get all subordinate requests for monitoring view
-$allSubordinateRequests = getAllSubordinateRequests($conn, $_SESSION['user_id']);
+$requestsResult = getRequestByAtasan($conn, $_SESSION['user_id']);
 $kpiResult = getKpiByAtasan($conn, $_SESSION['user_id']);
 
 // ============================================
-// HANDLE APPROVE/REJECT REQUEST (MULTI-LEVEL)
+// HANDLE APPROVE/REJECT REQUEST
 // ============================================
 
 if (isset($_POST['approve_request'])) {
     $reqId = $_POST['request_id'];
     
-    // Check if current user can approve this request
-    if (!canApproveRequest($conn, $reqId, $_SESSION['user_id'])) {
+    $stmt = $conn->prepare("SELECT r.user_id, u.nama FROM request_system r 
+                            JOIN users u ON r.user_id = u.id 
+                            WHERE r.id = ? AND u.atasan_id = ?");
+    $stmt->bind_param("ii", $reqId, $_SESSION['user_id']);
+    $stmt->execute();
+    $reqData = $stmt->get_result()->fetch_assoc();
+    
+    if (!$reqData) {
         header("Location: dashboard-atasan.php?page=request&error=unauthorized");
         exit;
     }
     
-    $komentar = $_POST['komentar'] ?? '';
+    $stmt = $conn->prepare("UPDATE request_system SET status='disetujui', approved_by=?, komentar_atasan=? WHERE id=?");
+    $stmt->bind_param("isi", $_SESSION['user_id'], $_POST['komentar'], $reqId);
+    $stmt->execute();
     
-    // Check if there's a next approver
-    $forwarded = forwardRequest($conn, $reqId);
-    
-    if (!$forwarded) {
-        // No more approvers, fully approve
-        $stmt = $conn->prepare("UPDATE request_system SET status='disetujui', approved_by=?, komentar_atasan=?, current_approver_id=NULL WHERE id=?");
-        $stmt->bind_param("isi", $_SESSION['user_id'], $komentar, $reqId);
-        $stmt->execute();
-        
-        // Get requester info for notification
-        $request = getRequestWithHierarchy($conn, $reqId);
-        addNotification($conn, $request['user_id'], 'Request Disetujui', 
-            'Request ' . $request['jenis_request'] . ' Anda telah disetujui semua atasan');
-    } else {
-        // Request forwarded, notify current approver they approved but need next level
-        $request = getRequestWithHierarchy($conn, $reqId);
-        addNotification($conn, $_SESSION['user_id'], 'Request Di-Forward', 
-            'Anda telah menyetujui request ' . $request['jenis_request'] . ' dari ' . $request['requester_name'] . '. Menunggu persetujuan atasan berikutnya.');
-    }
+    addNotification($conn, $reqData['user_id'], 'Request Disetujui', 'Request Anda telah disetujui atasan');
     
     header("Location: dashboard-atasan.php?page=request&success=approved");
     exit;
@@ -225,21 +194,23 @@ if (isset($_POST['approve_request'])) {
 if (isset($_POST['reject_request'])) {
     $reqId = $_POST['request_id'];
     
-    // Check if current user can reject this request
-    if (!canApproveRequest($conn, $reqId, $_SESSION['user_id'])) {
+    $stmt = $conn->prepare("SELECT r.user_id, u.nama FROM request_system r 
+                            JOIN users u ON r.user_id = u.id 
+                            WHERE r.id = ? AND u.atasan_id = ?");
+    $stmt->bind_param("ii", $reqId, $_SESSION['user_id']);
+    $stmt->execute();
+    $reqData = $stmt->get_result()->fetch_assoc();
+    
+    if (!$reqData) {
         header("Location: dashboard-atasan.php?page=request&error=unauthorized");
         exit;
     }
     
-    $komentar = $_POST['komentar'] ?? 'Ditolak';
-    
-    $stmt = $conn->prepare("UPDATE request_system SET status='ditolak', approved_by=?, komentar_atasan=?, current_approver_id=NULL WHERE id=?");
-    $stmt->bind_param("isi", $_SESSION['user_id'], $komentar, $reqId);
+    $stmt = $conn->prepare("UPDATE request_system SET status='ditolak', approved_by=?, komentar_atasan=? WHERE id=?");
+    $stmt->bind_param("isi", $_SESSION['user_id'], $_POST['komentar'], $reqId);
     $stmt->execute();
     
-    $request = getRequestWithHierarchy($conn, $reqId);
-    addNotification($conn, $request['user_id'], 'Request Ditolak', 
-        'Request ' . $request['jenis_request'] . ' Anda ditolak oleh ' . $_SESSION['nama']);
+    addNotification($conn, $reqData['user_id'], 'Request Ditolak', 'Request Anda ditolak atasan');
     
     header("Location: dashboard-atasan.php?page=request&success=rejected");
     exit;
@@ -638,173 +609,77 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                     </div>
                 </div>
 
-<!-- PAGE: REQUEST -->
-<?php elseif ($page == 'request'): ?>
-    <h1 class="page-title">Request System</h1>
-    <p class="page-subtitle">Kelola permintaan izin, cuti, sakit, dan lembur yang memerlukan persetujuan Anda</p>
+            <!-- PAGE: REQUEST -->
+            <?php elseif ($page == 'request'): ?>
+                <h1 class="page-title">Request System</h1>
+                <p class="page-subtitle">Kelola permintaan izin, cuti, sakit, dan lembur karyawan bawahan</p>
 
-    <?php if (isset($_GET['error'])): ?>
-        <div style="background:#fee2e2;color:#991b1b;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #ef4444">
-            <i class="fas fa-exclamation-circle"></i> <?= $_GET['error'] == 'unauthorized' ? 'Anda tidak memiliki akses ke request tersebut!' : 'Terjadi kesalahan!' ?>
-        </div>
-    <?php endif; ?>
-    <?php if (isset($_GET['success'])): ?>
-        <div style="background:#d1fae5;color:#065f46;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #10b981">
-            <i class="fas fa-check-circle"></i> 
-            <?= $_GET['success'] == 'approved' ? 'Request berhasil diproses!' : 'Request berhasil ditolak!' ?>
-        </div>
-    <?php endif; ?>
+                <?php if (isset($_GET['error'])): ?>
+                    <div style="background:#fee2e2;color:#991b1b;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #ef4444">
+                        <i class="fas fa-exclamation-circle"></i> <?= $_GET['error'] == 'unauthorized' ? 'Anda tidak memiliki akses ke request tersebut!' : 'Terjadi kesalahan!' ?>
+                    </div>
+                <?php endif; ?>
+                <?php if (isset($_GET['success'])): ?>
+                    <div style="background:#d1fae5;color:#065f46;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #10b981">
+                        <i class="fas fa-check-circle"></i> <?= $_GET['success'] == 'approved' ? 'Request berhasil disetujui!' : 'Request berhasil ditolak!' ?>
+                    </div>
+                <?php endif; ?>
 
-    <!-- Requests Needing My Approval -->
-    <div class="card" style="margin-bottom:25px">
-        <div class="card-header">
-            <span class="card-title"><i class="fas fa-clipboard-check"></i> Request Menunggu Persetujuan Anda</span>
-            <span class="badge badge-warning"><?= $requestsResult->num_rows ?> pending</span>
-        </div>
-        <div class="table-container">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Karyawan</th>
-                        <th>Jenis</th>
-                        <th>Tanggal</th>
-                        <th>Alasan</th>
-                        <th>Level</th>
-                        <th>Status</th>
-                        <th>Aksi</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php while ($row = $requestsResult->fetch_assoc()): 
-                        $approvalChain = getApprovalStatus($conn, $row['id']);
-                        $currentLevel = '';
-                        foreach ($approvalChain as $level) {
-                            if ($level['is_current']) {
-                                $currentLevel = $level['user']['nama_jabatan'];
-                                break;
-                            }
-                        }
-                    ?>
-                    <tr>
-                        <td>
-                            <strong><?= htmlspecialchars($row['nama']) ?></strong>
-                            <div style="font-size:12px;color:#6b7280"><?= htmlspecialchars($row['nama_divisi'] ?? '-') ?></div>
-                        </td>
-                        <td><?= ucfirst($row['jenis_request']) ?></td>
-                        <td><?= date('d/m/Y', strtotime($row['tanggal_mulai'])) ?></td>
-                        <td><?= htmlspecialchars(substr($row['alasan'], 0, 30)) ?>...</td>
-                        <td>
-                            <span class="badge badge-info">
-                                <i class="fas fa-layer-group"></i> <?= htmlspecialchars($currentLevel) ?>
-                            </span>
-                        </td>
-                        <td>
-                            <span class="badge badge-warning">Menunggu Anda</span>
-                        </td>
-                        <td>
-                            <button class="btn btn-success btn-sm" onclick="openApproveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nama']) ?>', '<?= $row['jenis_request'] ?>')">
-                                <i class="fas fa-check"></i>
-                            </button>
-                            <button class="btn btn-danger btn-sm" onclick="openRejectModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nama']) ?>', '<?= $row['jenis_request'] ?>')">
-                                <i class="fas fa-times"></i>
-                            </button>
-                            <button class="btn btn-info btn-sm" onclick="viewApprovalChain(<?= $row['id'] ?>)" title="Lihat Rantai Approval">
-                                <i class="fas fa-sitemap"></i>
-                            </button>
-                        </td>
-                    </tr>
-                    <?php endwhile; ?>
-                    <?php if ($requestsResult->num_rows == 0): ?>
-                    <tr>
-                        <td colspan="7" style="text-align:center;padding:30px;color:#6b7280">
-                            <i class="fas fa-check-circle" style="font-size:24px;display:block;margin-bottom:10px;color:#10b981"></i>
-                            Tidak ada request yang menunggu persetujuan Anda
-                        </td>
-                    </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Daftar Request - Karyawan Bawahan</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Karyawan</th>
+                                    <th>Jenis</th>
+                                    <th>Tanggal</th>
+                                    <th>Alasan</th>
+                                    <th>Status</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php while ($row = $requestsResult->fetch_assoc()): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($row['nama']) ?></td>
+                                    <td><?= ucfirst($row['jenis_request']) ?></td>
+                                    <td><?= date('d/m/Y', strtotime($row['tanggal_mulai'])) ?></td>
+                                    <td><?= htmlspecialchars(substr($row['alasan'], 0, 30)) ?>...</td>
+                                    <td>
+                                        <span class="badge badge-<?= $row['status']=='pending'?'warning':($row['status']=='disetujui'?'success':'danger') ?>">
+                                            <?= ucfirst($row['status']) ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <?php if ($row['status'] == 'pending'): ?>
+                                        <button class="btn btn-success btn-sm" onclick="openApproveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nama']) ?>', '<?= $row['jenis_request'] ?>')">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                        <button class="btn btn-danger btn-sm" onclick="openRejectModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nama']) ?>', '<?= $row['jenis_request'] ?>')">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                        <?php else: ?>
+                                        <span class="badge badge-info"><?= $row['komentar_atasan'] ?: 'Tidak ada komentar' ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endwhile; ?>
+                                <?php if ($requestsResult->num_rows == 0): ?>
+                                <tr>
+                                    <td colspan="6" style="text-align:center;padding:30px;color:#6b7280">
+                                        <i class="fas fa-inbox" style="font-size:24px;display:block;margin-bottom:10px"></i>
+                                        Belum ada request dari karyawan bawahan
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
 
-    <!-- All Subordinate Requests -->
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title"><i class="fas fa-list-alt"></i> Semua Request Bawahan</span>
-        </div>
-        <div class="table-container">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Karyawan</th>
-                        <th>Jenis</th>
-                        <th>Tanggal</th>
-                        <th>Status Approval</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php 
-                    if ($allSubordinateRequests):
-                        while ($row = $allSubordinateRequests->fetch_assoc()): 
-                            $approvalChain = getApprovalStatus($conn, $row['id']);
-                            $statusHtml = '';
-                            foreach ($approvalChain as $level) {
-                                $icon = $level['is_approved'] ? 'check' : ($level['is_rejected'] ? 'times' : ($level['is_current'] ? 'clock' : 'ellipsis-h'));
-                                $color = $level['is_approved'] ? 'success' : ($level['is_rejected'] ? 'danger' : ($level['is_current'] ? 'warning' : 'secondary'));
-                                $statusHtml .= '<span class="badge badge-' . $color . '" style="margin-right:4px" title="' . htmlspecialchars($level['user']['nama']) . '">';
-                                $statusHtml .= '<i class="fas fa-' . $icon . '"></i> ' . htmlspecialchars($level['user']['nama_jabatan']) . '</span>';
-                            }
-                    ?>
-                    <tr>
-                        <td><?= htmlspecialchars($row['nama']) ?></td>
-                        <td><?= ucfirst($row['jenis_request']) ?></td>
-                        <td><?= date('d/m/Y', strtotime($row['tanggal_mulai'])) ?></td>
-                        <td><?= $statusHtml ?></td>
-                        <td>
-                            <span class="badge badge-<?= $row['status']=='pending'?'warning':($row['status']=='disetujui'?'success':'danger') ?>">
-                                <?= ucfirst($row['status']) ?>
-                            </span>
-                        </td>
-                    </tr>
-                    <?php 
-                        endwhile;
-                    endif;
-                    ?>
-                    <?php if (!$allSubordinateRequests || $allSubordinateRequests->num_rows == 0): ?>
-                    <tr>
-                        <td colspan="5" style="text-align:center;padding:30px;color:#6b7280">
-                            <i class="fas fa-inbox" style="font-size:24px;display:block;margin-bottom:10px"></i>
-                            Belum ada request dari bawahan
-                        </td>
-                    </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- MODAL: View Approval Chain -->
-    <div class="modal-overlay" id="chainModal">
-        <div class="modal" style="max-width:600px">
-            <div class="modal-header">
-                <h3><i class="fas fa-sitemap"></i> Rantai Approval</h3>
-                <button class="modal-close" onclick="closeModal('chainModal')">&times;</button>
-            </div>
-            <div class="modal-body" id="chainContent"></div>
-        </div>
-    </div>
-
-    <script>
-    function viewApprovalChain(requestId) {
-        fetch('ajax_approval_chain.php?id=' + requestId)
-            .then(r => r.text())
-            .then(html => {
-                document.getElementById('chainContent').innerHTML = html;
-                openModal('chainModal');
-            });
-    }
-    </script>
             <!-- PAGE: KPI -->
             <?php elseif ($page == 'kpi'): ?>
                 <h1 class="page-title">Penilaian KPI</h1>
