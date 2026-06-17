@@ -593,3 +593,25 @@ body.dark-mode .form-control { background: #334155; border-color: #475569; color
 .toast.success { background: var(--success); }
 .toast.error { background: var(--danger); }
 .toast.warning { background: var(--warning); }
+/* Badge variations */
+.badge-purple { background: #8b5cf6; color: white; }
+.badge-blue { background: #3b82f6; color: white; }
+
+/* Pengumuman card styles */
+.pengumuman-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 20px;
+}
+
+/* File upload styling */
+input[type="file"].form-control {
+    padding: 8px;
+    font-size: 14px;
+}
+
+/* Modal image preview */
+.modal-body img {
+    max-width: 100%;
+    height: auto;
+}
