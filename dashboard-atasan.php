@@ -5,178 +5,43 @@ checkRole(['atasan']);
 $user = getUserById($conn, $_SESSION['user_id']);
 $page = $_GET['page'] ?? 'dashboard';
 $notifCount = getUnreadNotifCount($conn, $_SESSION['user_id']);
+if (isset($_GET['action']) && $_GET['action'] == 'mark_all_read') {
 
-// ============================================
-// HANDLE PENGUMUMAN ATASAN
-// ============================================
+                                    $stmt = $conn->prepare("UPDATE notifikasi SET is_read = 1 WHERE user_id = ?");
 
-// Tambah Pengumuman
-if (isset($_POST['tambah_pengumuman'])) {
-    $judul = $_POST['judul'];
-    $isi = $_POST['isi'];
-    $divisi_id = $user['divisi_id'];
-    $tanggal_kadaluarsa = !empty($_POST['tanggal_kadaluarsa']) ? $_POST['tanggal_kadaluarsa'] : null;
-    
-    $file_lampiran = '';
-    if (!empty($_FILES['file_lampiran']['name'])) {
-        $uploadDir = 'uploads/pengumuman/';
-        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-        $file_lampiran = $uploadDir . time() . '_' . basename($_FILES['file_lampiran']['name']);
-        move_uploaded_file($_FILES['file_lampiran']['tmp_name'], $file_lampiran);
-    }
-    
-    $stmt = $conn->prepare("INSERT INTO pengumuman (judul, isi, tipe_target, divisi_id, file_lampiran, tanggal_kadaluarsa, created_by) VALUES (?, ?, 'divisi', ?, ?, ?, ?)");
-    $stmt->bind_param("ssiss", $judul, $isi, $divisi_id, $file_lampiran, $tanggal_kadaluarsa, $_SESSION['user_id']);
-    $stmt->execute();
-    
-    // Notifikasi ke karyawan bawahan & karyawan di divisi yang sama
-    $notifStmt = $conn->prepare("SELECT id FROM users WHERE status='aktif' AND divisi_id = ? AND id != ? AND (role = 'karyawan' OR role = 'atasan')");
-    $notifStmt->bind_param("ii", $divisi_id, $_SESSION['user_id']);
-    $notifStmt->execute();
-    $notifResult = $notifStmt->get_result();
-    while ($u = $notifResult->fetch_assoc()) {
-        addNotification($conn, $u['id'], 'Pengumuman Divisi', 'Ada pengumuman dari atasan: ' . $judul);
-    }
-    
-    header("Location: dashboard-atasan.php?page=pengumuman&success=added");
-    exit;
-}
+                                    $stmt->bind_param("i", $_SESSION['user_id']);
 
-// Edit Pengumuman
-if (isset($_POST['edit_pengumuman'])) {
-    $id = $_POST['pengumuman_id'];
-    $judul = $_POST['judul'];
-    $isi = $_POST['isi'];
-    $tanggal_kadaluarsa = !empty($_POST['tanggal_kadaluarsa']) ? $_POST['tanggal_kadaluarsa'] : null;
-    
-    $stmt = $conn->prepare("SELECT file_lampiran FROM pengumuman WHERE id = ? AND created_by = ?");
-    $stmt->bind_param("ii", $id, $_SESSION['user_id']);
-    $stmt->execute();
-    $existing = $stmt->get_result()->fetch_assoc();
-    
-    if (!$existing) {
-        header("Location: dashboard-atasan.php?page=pengumuman&error=unauthorized");
-        exit;
-    }
-    
-    $file_lampiran = $existing['file_lampiran'];
-    if (!empty($_FILES['file_lampiran']['name'])) {
-        if (!empty($file_lampiran) && file_exists($file_lampiran)) {
-            @unlink($file_lampiran);
-        }
-        $uploadDir = 'uploads/pengumuman/';
-        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-        $file_lampiran = $uploadDir . time() . '_' . basename($_FILES['file_lampiran']['name']);
-        move_uploaded_file($_FILES['file_lampiran']['tmp_name'], $file_lampiran);
-    }
-    
-    $stmt = $conn->prepare("UPDATE pengumuman SET judul=?, isi=?, file_lampiran=?, tanggal_kadaluarsa=? WHERE id=? AND created_by=?");
-    $stmt->bind_param("ssssii", $judul, $isi, $file_lampiran, $tanggal_kadaluarsa, $id, $_SESSION['user_id']);
-    $stmt->execute();
-    
-    header("Location: dashboard-atasan.php?page=pengumuman&success=updated");
-    exit;
-}
+                                    $stmt->execute();
 
-// Hapus Pengumuman
-if (isset($_GET['hapus_pengumuman'])) {
-    $id = (int) $_GET['hapus_pengumuman'];
-    
-    $stmt = $conn->prepare("SELECT file_lampiran FROM pengumuman WHERE id = ? AND created_by = ?");
-    $stmt->bind_param("ii", $id, $_SESSION['user_id']);
-    $stmt->execute();
-    $p = $stmt->get_result()->fetch_assoc();
-    
-    if ($p) {
-        if (!empty($p['file_lampiran']) && file_exists($p['file_lampiran'])) {
-            @unlink($p['file_lampiran']);
-        }
-        $stmt = $conn->prepare("DELETE FROM pengumuman WHERE id = ?");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-        $stmt = $conn->prepare("DELETE FROM pengumuman_read WHERE pengumuman_id = ?");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-    }
-    
-    header("Location: dashboard-atasan.php?page=pengumuman&success=deleted");
-    exit;
-}
+                                    header("Location: dashboard-atasan.php?page=notifikasi");
 
-// Data pengumuman untuk atasan
-$atasanDivisi = $user['divisi_id'];
-$pengumumanList = $conn->query("SELECT p.*, u.nama as pengirim, d.nama_divisi, 
-                                (SELECT COUNT(*) FROM pengumuman_read pr WHERE pr.pengumuman_id = p.id) as read_count 
-                                FROM pengumuman p 
-                                LEFT JOIN users u ON p.created_by = u.id 
-                                LEFT JOIN divisi d ON p.divisi_id = d.id 
-                                WHERE (p.tipe_target = 'semua' OR (p.tipe_target = 'divisi' AND p.divisi_id = $atasanDivisi))
-                                AND (p.tanggal_kadaluarsa IS NULL OR p.tanggal_kadaluarsa >= CURDATE())
-                                ORDER BY p.created_at DESC");
+                                    exit;
 
-$myPengumuman = $conn->query("SELECT p.*, d.nama_divisi, 
-                               (SELECT COUNT(*) FROM pengumuman_read pr WHERE pr.pengumuman_id = p.id) as read_count 
-                               FROM pengumuman p 
-                               LEFT JOIN divisi d ON p.divisi_id = d.id 
-                               WHERE p.created_by = " . $_SESSION['user_id'] . "
-                               ORDER BY p.created_at DESC");
+                                }
 
-// ============================================
-// STATS & DATA
-// ============================================
+// Stats - SEMUA karyawan bawahan (langsung & tidak langsung)
+$totalKaryawan = countTotalBawahan($conn, $_SESSION['user_id']);
+$jumlahHadir = countHadirHariIni($conn, $_SESSION['user_id']);
+$pendingRequests = countPendingRequests($conn, $_SESSION['user_id']);
+$avgKpi = getAvgKpiBawahan($conn, $_SESSION['user_id']);
 
-$stmt = $conn->prepare("SELECT COUNT(*) as total FROM users WHERE atasan_id = ? AND role='karyawan' AND status='aktif'");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$totalKaryawan = $stmt->get_result()->fetch_assoc()['total'];
-
-$stmt = $conn->prepare("SELECT COUNT(*) as total FROM absensi a 
-                        JOIN users u ON a.user_id = u.id 
-                        WHERE u.atasan_id = ? AND a.tanggal = CURDATE() AND a.status='hadir'");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$jumlahHadir = $stmt->get_result()->fetch_assoc()['total'];
-
-$stmt = $conn->prepare("SELECT COUNT(*) as total FROM request_system r 
-                        JOIN users u ON r.user_id = u.id 
-                        WHERE u.atasan_id = ? AND r.status='pending'");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$pendingRequests = $stmt->get_result()->fetch_assoc()['total'];
-// ============================================
-// DATA GRAFIK ABSENSI MINGGUAN (untuk Chart.js)
-// ============================================
-$days = []; 
-$hadirData = []; 
-$telatData = []; 
-$izinData = [];
-for ($i = 6; $i >= 0; $i--) {
-    $date = date('Y-m-d', strtotime("-$i days"));
-    $days[] = date('D', strtotime($date));
-    $hadirData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status='hadir' AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
-    $telatData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status='telat' AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
-    $izinData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status IN ('izin','sakit') AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
-}
-
+// Data
 $absensiResult = getAbsensiByAtasan($conn, $_SESSION['user_id'], 50);
 $requestsResult = getRequestByAtasan($conn, $_SESSION['user_id']);
 $kpiResult = getKpiByAtasan($conn, $_SESSION['user_id']);
 
-// ============================================
-// HANDLE APPROVE/REJECT REQUEST
-// ============================================
-
+// Handle Approve/Reject Request dengan validasi bawahan (recursive)
 if (isset($_POST['approve_request'])) {
     $reqId = $_POST['request_id'];
     
     $stmt = $conn->prepare("SELECT r.user_id, u.nama FROM request_system r 
                             JOIN users u ON r.user_id = u.id 
-                            WHERE r.id = ? AND u.atasan_id = ?");
-    $stmt->bind_param("ii", $reqId, $_SESSION['user_id']);
+                            WHERE r.id = ?");
+    $stmt->bind_param("i", $reqId);
     $stmt->execute();
     $reqData = $stmt->get_result()->fetch_assoc();
     
-    if (!$reqData) {
+    if (!$reqData || !isBawahanRecursive($conn, $reqData['user_id'], $_SESSION['user_id'])) {
         header("Location: dashboard-atasan.php?page=request&error=unauthorized");
         exit;
     }
@@ -196,12 +61,12 @@ if (isset($_POST['reject_request'])) {
     
     $stmt = $conn->prepare("SELECT r.user_id, u.nama FROM request_system r 
                             JOIN users u ON r.user_id = u.id 
-                            WHERE r.id = ? AND u.atasan_id = ?");
-    $stmt->bind_param("ii", $reqId, $_SESSION['user_id']);
+                            WHERE r.id = ?");
+    $stmt->bind_param("i", $reqId);
     $stmt->execute();
     $reqData = $stmt->get_result()->fetch_assoc();
     
-    if (!$reqData) {
+    if (!$reqData || !isBawahanRecursive($conn, $reqData['user_id'], $_SESSION['user_id'])) {
         header("Location: dashboard-atasan.php?page=request&error=unauthorized");
         exit;
     }
@@ -216,14 +81,11 @@ if (isset($_POST['reject_request'])) {
     exit;
 }
 
-// ============================================
-// HANDLE KPI SCORING
-// ============================================
-
+// Handle KPI Scoring dengan validasi bawahan (recursive)
 if (isset($_POST['save_kpi'])) {
     $userId = (int) $_POST['karyawan_id'];
     
-    if (!isBawahan($conn, $userId, $_SESSION['user_id'])) {
+    if (!isBawahanRecursive($conn, $userId, $_SESSION['user_id'])) {
         header("Location: dashboard-atasan.php?page=kpi&error=not_bawahan");
         exit;
     }
@@ -260,7 +122,7 @@ if (isset($_POST['update_profile'])) {
     $divisi_id = $_POST['divisi_id'];
     $jabatan_id = $_POST['jabatan_id'];
     
-    $stmt = $conn->prepare("SELECT id FROM users WHERE username=? AND id!=?");
+    $stmt = $conn->prepare("SELECT id FROM users WHERE username = ? AND id != ?");
     $stmt->bind_param("si", $username, $_SESSION['user_id']);
     $stmt->execute();
     if ($stmt->get_result()->num_rows > 0) {
@@ -275,7 +137,7 @@ if (isset($_POST['update_profile'])) {
             $_SESSION['foto'] = $foto;
         }
         
-        $stmt = $conn->prepare("UPDATE users SET nama=?, email=?, no_hp=?, username=?, divisi_id=?, jabatan_id=?, foto=? WHERE id=?");
+        $stmt = $conn->prepare("UPDATE users SET nama = ?, email = ?, no_hp = ?, username = ?, divisi_id = ?, jabatan_id = ?, foto = ? WHERE id = ?");
         $stmt->bind_param("ssssiisi", $nama, $email, $no_hp, $username, $divisi_id, $jabatan_id, $foto, $_SESSION['user_id']);
         $stmt->execute();
         $_SESSION['nama'] = $nama;
@@ -292,7 +154,7 @@ if (isset($_POST['change_password'])) {
     
     if (password_verify($old, $user['password']) && $new === $confirm) {
         $hash = password_hash($new, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("UPDATE users SET password=? WHERE id=?");
+        $stmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
         $stmt->bind_param("si", $hash, $_SESSION['user_id']);
         $stmt->execute();
         $passMsg = "Password berhasil diubah!";
@@ -303,12 +165,244 @@ if (isset($_POST['change_password'])) {
 
 $divisiList = $conn->query("SELECT * FROM divisi ORDER BY nama_divisi");
 $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
+
+// ============================================
+// DATA PENGUMUMAN - SESUAI DATABASE
+// ============================================
+
+// Ambil pengumuman yang relevan untuk user ini (semua divisi atau divisi user)
+$currentDivisiId = $user['divisi_id'] ?? 0;
+$stmtPengumuman = $conn->prepare("
+    SELECT p.*, u.nama as created_by_nama 
+    FROM pengumuman p 
+    LEFT JOIN users u ON p.created_by = u.id 
+    WHERE p.tipe_target = 'semua' 
+       OR (p.tipe_target = 'divisi' AND p.divisi_id = ?)
+    ORDER BY p.created_at DESC
+");
+$stmtPengumuman->bind_param("i", $currentDivisiId);
+$stmtPengumuman->execute();
+$pengumumanList = $stmtPengumuman->get_result();
+
+// Hitung pengumuman belum dibaca
+$stmtUnreadPengumuman = $conn->prepare("
+    SELECT COUNT(*) as unread_count 
+    FROM pengumuman p 
+    LEFT JOIN pengumuman_read pr ON p.id = pr.pengumuman_id AND pr.user_id = ?
+    WHERE pr.id IS NULL 
+    AND (p.tipe_target = 'semua' OR (p.tipe_target = 'divisi' AND p.divisi_id = ?))
+");
+$stmtUnreadPengumuman->bind_param("ii", $_SESSION['user_id'], $currentDivisiId);
+$stmtUnreadPengumuman->execute();
+$unreadPengumumanCount = $stmtUnreadPengumuman->get_result()->fetch_assoc()['unread_count'];
+
+// Handle mark read pengumuman
+if (isset($_GET['mark_pengumuman_read']) && is_numeric($_GET['mark_pengumuman_read'])) {
+    $pengumumanId = (int)$_GET['mark_pengumuman_read'];
+    $stmt = $conn->prepare("INSERT IGNORE INTO pengumuman_read (pengumuman_id, user_id) VALUES (?, ?)");
+    $stmt->bind_param("ii", $pengumumanId, $_SESSION['user_id']);
+    $stmt->execute();
+    header("Location: dashboard-atasan.php?page=pengumuman");
+    exit;
+}
+
+// Data untuk chart absensi mingguan
+$days = []; 
+$hadirData = []; 
+$telatData = []; 
+$izinData = [];
+$bawahanIds = getAllBawahanIds($conn, $_SESSION['user_id']);
+
+if (!empty($bawahanIds)) {
+    $placeholders = implode(',', array_fill(0, count($bawahanIds), '?'));
+    $types = str_repeat('i', count($bawahanIds));
+    
+    for ($i = 6; $i >= 0; $i--) {
+        $date = date('Y-m-d', strtotime("-$i days"));
+        $days[] = date('D', strtotime($date));
+        
+        $stmt = $conn->prepare("SELECT COUNT(*) as c FROM absensi 
+                                WHERE user_id IN ($placeholders) 
+                                AND tanggal = ? AND status = 'hadir'");
+        $params = array_merge($bawahanIds, [$date]);
+        $stmt->bind_param($types . "s", ...$params);
+        $stmt->execute();
+        $hadirData[] = $stmt->get_result()->fetch_assoc()['c'];
+        
+        $stmt = $conn->prepare("SELECT COUNT(*) as c FROM absensi 
+                                WHERE user_id IN ($placeholders) 
+                                AND tanggal = ? AND status = 'telat'");
+        $stmt->bind_param($types . "s", ...$params);
+        $stmt->execute();
+        $telatData[] = $stmt->get_result()->fetch_assoc()['c'];
+        
+        $stmt = $conn->prepare("SELECT COUNT(*) as c FROM absensi 
+                                WHERE user_id IN ($placeholders) 
+                                AND tanggal = ? AND status IN ('izin','sakit')");
+        $stmt->bind_param($types . "s", ...$params);
+        $stmt->execute();
+        $izinData[] = $stmt->get_result()->fetch_assoc()['c'];
+    }
+}
+// ============================================
+// HANDLE NOTIFIKASI
+// ============================================
+
+if ($page == 'notifikasi') {
+
+    if (isset($_GET['action']) && $_GET['action'] == 'mark_all_read') {
+        $stmt = $conn->prepare("UPDATE notifikasi SET is_read = 1 WHERE user_id = ?");
+        $stmt->bind_param("i", $_SESSION['user_id']);
+        $stmt->execute();
+
+        header("Location: dashboard-atasan.php?page=notifikasi");
+        exit;
+    }
+
+    if (isset($_GET['action']) && $_GET['action'] == 'delete_all') {
+        $stmt = $conn->prepare("DELETE FROM notifikasi WHERE user_id = ?");
+        $stmt->bind_param("i", $_SESSION['user_id']);
+        $stmt->execute();
+
+        header("Location: dashboard-atasan.php?page=notifikasi");
+        exit;
+    }
+
+    if (isset($_GET['mark_read'])) {
+        $notifId = (int) $_GET['mark_read'];
+
+        $stmt = $conn->prepare("UPDATE notifikasi SET is_read = 1 WHERE id = ? AND user_id = ?");
+        $stmt->bind_param("ii", $notifId, $_SESSION['user_id']);
+        $stmt->execute();
+
+        header("Location: dashboard-atasan.php?page=notifikasi");
+        exit;
+    }
+
+    if (isset($_GET['delete'])) {
+        $notifId = (int) $_GET['delete'];
+
+        $stmt = $conn->prepare("DELETE FROM notifikasi WHERE id = ? AND user_id = ?");
+        $stmt->bind_param("ii", $notifId, $_SESSION['user_id']);
+        $stmt->execute();
+
+        header("Location: dashboard-atasan.php?page=notifikasi");
+        exit;
+    }
+}
+// ============================================
+// HANDLE PENGUMUMAN ATASAN (CRUD)
+// ============================================
+
+$pengumumanMsg = '';
+$pengumumanError = '';
+
+// Cek apakah atasan ini memiliki bawahan
+$hasBawahan = $totalKaryawan > 0;
+
+// Handle Create Pengumuman (Atasan hanya untuk bawahan/divisi sendiri)
+if (isset($_POST['create_pengumuman']) && $hasBawahan) {
+    $judul = trim($_POST['judul']);
+    $isi = trim($_POST['isi']);
+    $tipe_target = $_POST['tipe_target'];
+    $divisi_id = !empty($_POST['divisi_id']) ? (int)$_POST['divisi_id'] : null;
+    $tanggal_kadaluarsa = !empty($_POST['tanggal_kadaluarsa']) ? $_POST['tanggal_kadaluarsa'] : null;
+    
+    // Validasi: atasan hanya bisa kirim ke divisi sendiri atau semua (tapi hanya untuk bawahan)
+    if ($tipe_target == 'divisi' && $divisi_id != $user['divisi_id']) {
+        $pengumumanError = "Anda hanya dapat mengirim pengumuman ke divisi Anda sendiri!";
+    } elseif (empty($judul) || empty($isi)) {
+        $pengumumanError = "Judul dan isi pengumuman wajib diisi!";
+    } else {
+        // Handle file lampiran
+        $file_lampiran = null;
+        if (!empty($_FILES['file_lampiran']['name'])) {
+            $uploadDir = 'uploads/lampiran/';
+            if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+            
+            $allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+            $fileType = $_FILES['file_lampiran']['type'];
+            $fileSize = $_FILES['file_lampiran']['size'];
+            
+            if (!in_array($fileType, $allowedTypes)) {
+                $pengumumanError = "Format file tidak didukung! (PDF, JPG, PNG, DOC, DOCX)";
+            } elseif ($fileSize > 5 * 1024 * 1024) {
+                $pengumumanError = "Ukuran file maksimal 5MB!";
+            } else {
+                $ext = pathinfo($_FILES['file_lampiran']['name'], PATHINFO_EXTENSION);
+                $fileName = time() . '_' . uniqid() . '.' . $ext;
+                $file_lampiran = $uploadDir . $fileName;
+                if (!move_uploaded_file($_FILES['file_lampiran']['tmp_name'], $file_lampiran)) {
+                    $pengumumanError = "Gagal mengupload file!";
+                    $file_lampiran = null;
+                }
+            }
+        }
+        
+        if (empty($pengumumanError)) {
+            // Untuk atasan, default divisi_id adalah divisi atasan jika tidak dipilih
+            if ($tipe_target == 'divisi' && empty($divisi_id)) {
+                $divisi_id = $user['divisi_id'];
+            }
+            
+            $stmt = $conn->prepare("INSERT INTO pengumuman (judul, isi, tipe_target, divisi_id, file_lampiran, tanggal_kadaluarsa, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("sssisss", $judul, $isi, $tipe_target, $divisi_id, $file_lampiran, $tanggal_kadaluarsa, $_SESSION['user_id']);
+            $stmt->execute();
+            $pengumumanId = $conn->insert_id;
+            
+            // Kirim notifikasi ke bawahan (semua level bawahan)
+            $bawahanIds = getAllBawahanIds($conn, $_SESSION['user_id']);
+            if (!empty($bawahanIds)) {
+                foreach ($bawahanIds as $bid) {
+                    addNotification($conn, $bid, 'Pengumuman dari Atasan', 'Ada pengumuman baru dari atasan: ' . $judul);
+                }
+            }
+            
+            $pengumumanMsg = "Pengumuman berhasil dibuat dan dikirim ke " . count($bawahanIds) . " bawahan!";
+        }
+    }
+}
+
+// Handle Delete Pengumuman (hanya bisa hapus yang dibuat sendiri)
+if (isset($_GET['delete_pengumuman'])) {
+    $id = (int)$_GET['delete_pengumuman'];
+    $stmt = $conn->prepare("SELECT created_by FROM pengumuman WHERE id = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $createdBy = $stmt->get_result()->fetch_assoc()['created_by'] ?? 0;
+    
+    if ($createdBy == $_SESSION['user_id']) {
+        $stmt = $conn->prepare("DELETE FROM pengumuman WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $pengumumanMsg = "Pengumuman berhasil dihapus!";
+    } else {
+        $pengumumanError = "Anda hanya dapat menghapus pengumuman yang Anda buat!";
+    }
+}
+
+// Get pengumuman yang dibuat oleh atasan ini + yang relevan untuk ditampilkan
+$pengumumanCreated = $conn->query("
+    SELECT p.*, d.nama_divisi, 
+    (SELECT COUNT(*) FROM pengumuman_read WHERE pengumuman_id = p.id) as read_count
+    FROM pengumuman p 
+    LEFT JOIN divisi d ON p.divisi_id = d.id 
+    WHERE p.created_by = {$_SESSION['user_id']}
+    ORDER BY p.created_at DESC
+");
+
+// ============================================
+// HANDLE NOTIFIKASI (PERBAIKAN - HAPUS DUPLIKASI)
+// ============================================
+
+// Hapus duplikasi: pindahkan semua handler GET ke sini dan hapus yang di bawah
+// Hapus blok if ($page == 'notifikasi') yang lama (baris ~160-200an) dan ganti dengan yang ini:
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Dashboard Atasan - Request System</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -316,6 +410,9 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
 </head>
 <body>
     <div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div></div>
+
+    <!-- SIDEBAR OVERLAY (Mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
     <!-- SIDEBAR -->
     <div class="sidebar" id="sidebar">
@@ -348,6 +445,16 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 <i class="fas fa-chart-line"></i>
                 <span>Penilaian KPI</span>
             </a>
+            <a href="?page=pengumuman" class="nav-item <?= $page=='pengumuman'?'active':'' ?>">
+                <i class="fas fa-bullhorn"></i>
+                <span>Pengumuman</span>
+                <?php 
+                $unreadPengumumanAtasan = countUnreadPengumuman($conn, $_SESSION['user_id'], $user['divisi_id']);
+                if ($unreadPengumumanAtasan > 0): 
+                ?>
+                    <span class="badge" style="background:#3b82f6"><?= $unreadPengumumanAtasan ?></span>
+                <?php endif; ?>
+            </a>
             <a href="?page=request" class="nav-item <?= $page=='request'?'active':'' ?>">
                 <i class="fas fa-file-alt"></i>
                 <span>Request System</span>
@@ -358,16 +465,6 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
             <a href="?page=profile" class="nav-item <?= $page=='profile'?'active':'' ?>">
                 <i class="fas fa-user"></i>
                 <span>Profile</span>
-            </a>
-            <a href="?page=pengumuman" class="nav-item <?= $page=='pengumuman'?'active':'' ?>">
-                <i class="fas fa-bullhorn"></i>
-                <span>Pengumuman</span>
-                <?php 
-                $unreadPengumuman = getUnreadPengumumanCount($conn, $_SESSION['user_id']);
-                if ($unreadPengumuman > 0): 
-                ?>
-                    <span class="badge"><?= $unreadPengumuman ?></span>
-                <?php endif; ?>
             </a>
             <a href="logout.php" class="nav-item">
                 <i class="fas fa-sign-out-alt"></i>
@@ -382,25 +479,24 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
         <!-- NAVBAR -->
         <div class="navbar">
             <div class="nav-left">
-                <button class="toggle-sidebar" onclick="toggleSidebar()">
+                <!-- Desktop toggle -->
+                <button class="toggle-sidebar" onclick="toggleSidebar()" title="Toggle Sidebar">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <!-- Mobile toggle -->
+                <button class="mobile-toggle" onclick="toggleMobileSidebar()" title="Menu">
                     <i class="fas fa-bars"></i>
                 </button>
                 <span class="breadcrumb">Dashboard / <?= ucfirst($page) ?></span>
             </div>
             <div class="nav-right">
-                <div class="nav-icon" onclick="openModal('notifModal')" style="position:relative">
+                <a href="dashboard-atasan.php?page=notifikasi" class="nav-icon" style="text-decoration:none;position:relative;color:inherit">
                     <i class="fas fa-bell"></i>
                     <?php if ($notifCount > 0): ?>
-                        <span class="notif-count"><?= $notifCount ?></span>
+                        <span class="notif-badge" style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;font-size:10px;padding:2px 6px;border-radius:10px"><?= $notifCount ?></span>
                     <?php endif; ?>
-                </div>
-                <div class="nav-icon" onclick="openModal('notifModal')" style="position:relative">
-                    <i class="fas fa-bullhorn"></i>
-                    <?php if ($unreadPengumuman > 0): ?>
-                        <span class="notif-count"><?= $unreadPengumuman ?></span>
-                    <?php endif; ?>
-                </div>
-                <div class="nav-icon" onclick="toggleDarkMode()">
+                </a>
+                <div class="nav-icon" onclick="toggleDarkMode()" title="Dark Mode">
                     <i class="fas fa-moon"></i>
                 </div>
             </div>
@@ -415,34 +511,34 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 <p class="page-subtitle">Overview performa tim dan aktivitas karyawan</p>
 
                 <div class="stats-grid">
-                    <div class="stat-card">
+                    <a href="?page=karyawan-saya" class="stat-card">
                         <div class="stat-icon blue"><i class="fas fa-users"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalKaryawan ?></h3>
                             <p>Total Karyawan Bawahan</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=absensi" class="stat-card">
                         <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
                         <div class="stat-info">
                             <h3><?= $jumlahHadir ?></h3>
                             <p>Hadir Hari Ini</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=request" class="stat-card">
                         <div class="stat-icon orange"><i class="fas fa-clock"></i></div>
                         <div class="stat-info">
                             <h3><?= $pendingRequests ?></h3>
                             <p>Request Pending</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=kpi" class="stat-card">
                         <div class="stat-icon red"><i class="fas fa-star"></i></div>
                         <div class="stat-info">
-                            <h3><?= round($conn->query("SELECT AVG(k.nilai) as avg FROM kpi k JOIN users u ON k.user_id = u.id WHERE u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['avg'] ?? 0, 2) ?></h3>
+                            <h3><?= $avgKpi ?></h3>
                             <p>Rata-rata KPI Bawahan</p>
                         </div>
-                    </div>
+                    </a>
                 </div>
 
                 <div class="card">
@@ -454,20 +550,9 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
     </div>
 </div>
 
-                <?php
-                $days = []; $hadirData = []; $telatData = []; $izinData = [];
-                for ($i = 6; $i >= 0; $i--) {
-                    $date = date('Y-m-d', strtotime("-$i days"));
-                    $days[] = date('D', strtotime($date));
-                    $hadirData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status='hadir' AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
-                    $telatData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status='telat' AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
-                    $izinData[] = $conn->query("SELECT COUNT(*) as c FROM absensi a JOIN users u ON a.user_id = u.id WHERE a.tanggal='$date' AND a.status IN ('izin','sakit') AND u.atasan_id = " . $_SESSION['user_id'])->fetch_assoc()['c'];
-                }
-                ?>
-                            <!-- PAGE: KARYAWAN SAYA -->
             <?php elseif ($page == 'karyawan-saya'): ?>
                 <h1 class="page-title">Karyawan Saya</h1>
-                <p class="page-subtitle">Daftar karyawan yang menjadi bawahan Anda</p>
+                <p class="page-subtitle">Daftar karyawan yang menjadi bawahan Anda (langsung & tidak langsung)</p>
 
                 <?php if (isset($_GET['error'])): ?>
                     <div style="background:#fee2e2;color:#991b1b;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #ef4444">
@@ -511,23 +596,26 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                                     <th>Divisi</th>
                                     <th>Jabatan</th>
                                     <th>Status</th>
+                                    <th>Level</th>
                                     <th>Bergabung</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php
-                                $karyawanSaya = getKaryawanByAtasan($conn, $_SESSION['user_id']);
-                                if ($karyawanSaya->num_rows == 0):
+                                $allBawahan = getAllBawahanRecursive($conn, $_SESSION['user_id']);
+                                if (empty($allBawahan)):
                                 ?>
                                 <tr>
-                                    <td colspan="7" style="text-align:center;padding:40px;color:#6b7280">
+                                    <td colspan="8" style="text-align:center;padding:40px;color:#6b7280">
                                         <i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>
                                         <p>Belum ada karyawan yang ditugaskan ke Anda</p>
                                         <p style="font-size:12px">Hubungi admin untuk menambahkan karyawan</p>
                                     </td>
                                 </tr>
-                                <?php else: ?>
-                                    <?php while ($row = $karyawanSaya->fetch_assoc()): ?>
+                                <?php else: 
+                                    foreach ($allBawahan as $row):
+                                        $bLevel = getHierarchyLevel($conn, $row['id']);
+                                ?>
                                     <tr>
                                         <td>
                                             <img src="<?= $row['foto'] ?? 'https://via.placeholder.com/40' ?>" 
@@ -542,9 +630,10 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                                                 <?= $row['status']=='aktif'?'Aktif':'Tidak Aktif' ?>
                                             </span>
                                         </td>
+                                        <td><span class="badge badge-info">Level <?= $bLevel ?></span></td>
                                         <td><?= date('d/m/Y', strtotime($row['created_at'])) ?></td>
                                     </tr>
-                                    <?php endwhile; ?>
+                                    <?php endforeach; ?>
                                 <?php endif; ?>
                             </tbody>
                         </table>
@@ -706,13 +795,13 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                             <select name="karyawan_id" class="form-control" required>
                                 <option value="">Pilih Karyawan</option>
                                 <?php
-                                $karyawan = getKaryawanByAtasan($conn, $_SESSION['user_id']);
-                                while ($k = $karyawan->fetch_assoc()):
+                                $allBawahan = getAllBawahanRecursive($conn, $_SESSION['user_id']);
+                                foreach ($allBawahan as $k):
                                 ?>
                                 <option value="<?= $k['id'] ?>"><?= htmlspecialchars($k['nama']) ?> (<?= htmlspecialchars($k['nama_jabatan'] ?? '-') ?>)</option>
-                                <?php endwhile; ?>
+                                <?php endforeach; ?>
                             </select>
-                            <?php if ($karyawan->num_rows == 0): ?>
+                            <?php if (empty($allBawahan)): ?>
                             <small style="color:#dc2626"><i class="fas fa-exclamation-triangle"></i> Belum ada karyawan bawahan</small>
                             <?php endif; ?>
                         </div>
@@ -779,7 +868,379 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                         </table>
                     </div>
                 </div>
-                            <!-- PAGE: PROFILE -->
+
+                <div class="card" style="margin-top: 25px;">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fas fa-history"></i> History Penilaian KPI</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="historyKpiTable">
+                            <thead>
+                                <tr>
+                                    <th>No</th>
+                                    <th>Karyawan</th>
+                                    <th>Periode</th>
+                                    <th>Target</th>
+                                    <th>Nilai</th>
+                                    <th>Komentar</th>
+                                    <th>Dinilai Oleh</th>
+                                    <th>Tanggal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $historyKpiQuery = "SELECT k.*, u.nama as karyawan_nama, a.nama as atasan_nama 
+                                                   FROM kpi k 
+                                                   JOIN users u ON k.user_id = u.id 
+                                                   LEFT JOIN users a ON k.created_by = a.id 
+                                                   ORDER BY k.created_at DESC";
+                                $historyKpiResult = $conn->query($historyKpiQuery);
+                                $no = 1;
+                                if ($historyKpiResult && $historyKpiResult->num_rows > 0):
+                                    while ($row = $historyKpiResult->fetch_assoc()):
+                                ?>
+                                <tr>
+                                    <td><?= $no++ ?></td>
+                                    <td><?= htmlspecialchars($row['karyawan_nama']) ?></td>
+                                    <td><?= htmlspecialchars($row['periode']) ?></td>
+                                    <td><?= $row['target'] ?>%</td>
+                                    <td>
+                                        <span class="badge badge-<?= $row['nilai']>=80?'success':($row['nilai']>=60?'warning':'danger') ?>">
+                                            <?= $row['nilai'] ?>
+                                        </span>
+                                    </td>
+                                    <td><?= htmlspecialchars($row['komentar'] ?? '-') ?></td>
+                                    <td><?= htmlspecialchars($row['atasan_nama'] ?? 'System') ?></td>
+                                    <td><?= date('d/m/Y H:i', strtotime($row['created_at'])) ?></td>
+                                </tr>
+                                <?php endwhile; else: ?>
+                                <tr>
+                                    <td colspan="8" style="text-align: center; padding: 20px; color: #6b7280;">
+                                        <i class="fas fa-inbox" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
+                                        Belum ada history penilaian KPI
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                            <?php elseif ($page == 'pengumuman'): ?>
+                <h1 class="page-title">Pengumuman</h1>
+                <p class="page-subtitle">Kelola pengumuman untuk karyawan bawahan</p>
+
+                <?php if ($pengumumanMsg): ?>
+                    <div style="background:#d1fae5;color:#065f46;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #10b981">
+                        <i class="fas fa-check-circle"></i> <?= $pengumumanMsg ?>
+                    </div>
+                <?php endif; ?>
+                <?php if ($pengumumanError): ?>
+                    <div style="background:#fee2e2;color:#991b1b;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #ef4444">
+                        <i class="fas fa-times-circle"></i> <?= $pengumumanError ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($hasBawahan): ?>
+                <!-- Form Buat Pengumuman -->
+                <div class="card" style="margin-bottom:25px">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fas fa-plus-circle"></i> Buat Pengumuman untuk Bawahan</span>
+                    </div>
+                    <form method="POST" enctype="multipart/form-data" style="padding:20px">
+                        <div class="form-group">
+                            <label><i class="fas fa-heading"></i> Judul Pengumuman</label>
+                            <input type="text" name="judul" class="form-control" required placeholder="Masukkan judul pengumuman...">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-align-left"></i> Isi Pengumuman</label>
+                            <textarea name="isi" class="form-control" rows="5" required placeholder="Tulis isi pengumuman di sini..."></textarea>
+                        </div>
+                        
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:15px;margin-bottom:15px">
+                            <div class="form-group">
+                                <label><i class="fas fa-bullseye"></i> Target Pengumuman</label>
+                                <select name="tipe_target" id="tipeTargetAtasan" class="form-control" required onchange="toggleDivisiSelectAtasan()">
+                                    <option value="semua">Semua Bawahan (Semua Divisi)</option>
+                                    <option value="divisi">Divisi Saya Saja (<?= htmlspecialchars($user['nama_divisi'] ?? 'Divisi') ?>)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group" id="divisiSelectAtasan" style="display:none">
+                                <label><i class="fas fa-building"></i> Divisi</label>
+                                <select name="divisi_id" class="form-control">
+                                    <option value="<?= $user['divisi_id'] ?>"><?= htmlspecialchars($user['nama_divisi'] ?? 'Divisi Saya') ?></option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label><i class="fas fa-calendar-times"></i> Tanggal Kadaluarsa (Opsional)</label>
+                                <input type="date" name="tanggal_kadaluarsa" class="form-control" min="<?= date('Y-m-d') ?>">
+                                <small style="color:#6b7280">Pengumuman akan otomatis hilang setelah tanggal ini</small>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-paperclip"></i> Lampiran File (Opsional)</label>
+                            <input type="file" name="file_lampiran" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+                            <small style="color:#6b7280">Format: PDF, JPG, PNG, DOC, DOCX. Max 5MB</small>
+                        </div>
+                        
+                        <button type="submit" name="create_pengumuman" class="btn btn-primary" style="padding:10px 25px">
+                            <i class="fas fa-paper-plane"></i> Kirim ke Bawahan
+                        </button>
+                    </form>
+                </div>
+                <?php else: ?>
+                <div class="card" style="margin-bottom:25px;background:#fef3c7;border-left:4px solid #f59e0b">
+                    <div style="padding:20px">
+                        <i class="fas fa-exclamation-triangle"></i> <strong>Anda belum memiliki karyawan bawahan.</strong> 
+                        Hubungi admin untuk menambahkan karyawan bawahan agar dapat membuat pengumuman.
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Pengumuman yang Dibuat Atasan Ini -->
+                <div class="card" style="margin-bottom:25px">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fas fa-paper-plane"></i> Pengumuman yang Anda Buat</span>
+                        <span class="badge badge-primary"><?= $pengumumanCreated->num_rows ?> pengumuman</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Judul</th>
+                                    <th>Target</th>
+                                    <th>Tanggal</th>
+                                    <th>Kadaluarsa</th>
+                                    <th>Dibaca</th>
+                                    <th>Status</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php while ($p = $pengumumanCreated->fetch_assoc()): 
+                                    $isExpired = !empty($p['tanggal_kadaluarsa']) && strtotime($p['tanggal_kadaluarsa']) < strtotime(date('Y-m-d'));
+                                ?>
+                                <tr style="<?= $isExpired ? 'opacity:0.6;background:#f3f4f6' : '' ?>">
+                                    <td>
+                                        <strong><?= htmlspecialchars($p['judul']) ?></strong>
+                                        <?php if (!empty($p['file_lampiran'])): ?>
+                                            <br><small><i class="fas fa-paperclip"></i> Ada lampiran</small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($p['tipe_target'] == 'semua'): ?>
+                                            <span class="badge" style="background:#8b5cf6;color:#fff">Semua Bawahan</span>
+                                        <?php else: ?>
+                                            <span class="badge" style="background:#3b82f6;color:#fff"><?= htmlspecialchars($p['nama_divisi'] ?? 'Divisi') ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= date('d/m/Y H:i', strtotime($p['created_at'])) ?></td>
+                                    <td>
+                                        <?php if ($p['tanggal_kadaluarsa']): ?>
+                                            <?= date('d/m/Y', strtotime($p['tanggal_kadaluarsa'])) ?>
+                                            <?php if ($isExpired): ?>
+                                                <span class="badge badge-secondary">Expired</span>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <span style="color:#9ca3af">-</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-success">
+                                            <i class="fas fa-eye"></i> <?= $p['read_count'] ?> kali
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <?php if ($isExpired): ?>
+                                            <span class="badge badge-secondary">Kadaluarsa</span>
+                                        <?php else: ?>
+                                            <span class="badge badge-success">Aktif</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <a href="?page=pengumuman&delete_pengumuman=<?= $p['id'] ?>" 
+                                           class="btn btn-danger btn-sm" 
+                                           onclick="return confirm('Yakin hapus pengumuman ini?')"
+                                           title="Hapus">
+                                            <i class="fas fa-trash"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                <?php endwhile; ?>
+                                <?php if ($pengumumanCreated->num_rows == 0): ?>
+                                <tr>
+                                    <td colspan="7" style="text-align:center;padding:40px;color:#6b7280">
+                                        <i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>
+                                        Belum ada pengumuman yang Anda buat
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Pengumuman yang Diterima (Read-only) -->
+                <h2 style="margin-top:30px;margin-bottom:15px;font-size:18px;color:#374151">
+                    <i class="fas fa-inbox"></i> Pengumuman yang Diterima
+                </h2>
+                
+                <?php if ($pengumumanList && $pengumumanList->num_rows > 0): ?>
+                    <div class="pengumuman-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px;">
+                        <?php 
+                        $pengumumanList->data_seek(0); // Reset pointer
+                        while ($p = $pengumumanList->fetch_assoc()): 
+                            $stmtRead = $conn->prepare("SELECT id FROM pengumuman_read WHERE pengumuman_id = ? AND user_id = ?");
+                            $stmtRead->bind_param("ii", $p['id'], $_SESSION['user_id']);
+                            $stmtRead->execute();
+                            $isRead = $stmtRead->get_result()->num_rows > 0;
+                            
+                            $isExpired = !empty($p['tanggal_kadaluarsa']) && strtotime($p['tanggal_kadaluarsa']) < strtotime(date('Y-m-d'));
+                            
+                            $borderColor = $p['tipe_target'] == 'semua' ? '#8b5cf6' : '#3b82f6';
+                            $badgeClass = $p['tipe_target'] == 'semua' ? 'badge-purple' : 'badge-blue';
+                            $badgeText = $p['tipe_target'] == 'semua' ? 'Semua Divisi' : 'Divisi ' . htmlspecialchars($p['nama_divisi'] ?? 'Tertentu');
+                        ?>
+                        <div class="card" style="border-left: 4px solid <?= $borderColor ?>; <?= $isExpired ? 'opacity: 0.6;' : '' ?> <?= $isRead ? '' : 'background: #fefce8;' ?>">
+                            <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+                                <span class="card-title" style="font-size: 16px; font-weight: 600;">
+                                    <i class="fas fa-bullhorn" style="color: <?= $borderColor ?>"></i>
+                                    <?= htmlspecialchars($p['judul']) ?>
+                                </span>
+                                <div style="display:flex;gap:5px;flex-wrap:wrap">
+                                    <span class="badge" style="background:<?= $borderColor ?>;color:#fff"><?= $badgeText ?></span>
+                                    <?php if ($isExpired): ?>
+                                        <span class="badge badge-secondary"><i class="fas fa-clock"></i> Kadaluarsa</span>
+                                    <?php endif; ?>
+                                    <?php if (!$isRead): ?>
+                                        <span class="badge badge-warning">Baru</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div style="padding: 15px 0; color: #4b5563; line-height: 1.6;">
+                                <?= nl2br(htmlspecialchars($p['isi'])) ?>
+                            </div>
+                            
+                            <?php if (!empty($p['file_lampiran'])): ?>
+                            <div style="padding: 10px 0;">
+                                <a href="<?= htmlspecialchars($p['file_lampiran']) ?>" target="_blank" class="btn btn-secondary btn-sm">
+                                    <i class="fas fa-paperclip"></i> Lihat Lampiran
+                                </a>
+                            </div>
+                            <?php endif; ?>
+                            
+                            <div style="border-top: 1px solid #e5e7eb; padding-top: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; color: #6b7280;">
+                                <span><i class="fas fa-user"></i> <?= htmlspecialchars($p['created_by_nama'] ?? 'Admin') ?></span>
+                                <span><i class="fas fa-clock"></i> <?= date('d/m/Y H:i', strtotime($p['created_at'])) ?></span>
+                                <?php if (!empty($p['tanggal_kadaluarsa'])): ?>
+                                    <span><i class="fas fa-calendar-times"></i> Kadaluarsa: <?= date('d/m/Y', strtotime($p['tanggal_kadaluarsa'])) ?></span>
+                                <?php endif; ?>
+                            </div>
+                            
+                            <?php if (!$isRead): ?>
+                            <div style="margin-top: 12px; text-align: right;">
+                                <a href="?page=pengumuman&mark_pengumuman_read=<?= $p['id'] ?>" class="btn btn-success btn-sm">
+                                    <i class="fas fa-check"></i> Tandai Dibaca
+                                </a>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                        <?php endwhile; ?>
+                    </div>
+                <?php else: ?>
+                    <div class="card" style="text-align: center; padding: 50px;">
+                        <i class="fas fa-bullhorn" style="font-size: 48px; color: #d1d5db; margin-bottom: 15px; display: block;"></i>
+                        <h3 style="color: #6b7280; margin-bottom: 8px;">Belum Ada Pengumuman</h3>
+                        <p style="color: #9ca3af;">Tidak ada pengumuman untuk divisi Anda saat ini</p>
+                    </div>
+                <?php endif; ?>
+
+                <script>
+                function toggleDivisiSelectAtasan() {
+                    const tipe = document.getElementById('tipeTargetAtasan').value;
+                    const divisiSelect = document.getElementById('divisiSelectAtasan');
+                    divisiSelect.style.display = tipe === 'divisi' ? 'block' : 'none';
+                }
+                </script>
+
+                        <?php elseif ($page == 'notifikasi'): ?>
+                <h1 class="page-title">Notifikasi</h1>
+                <p class="page-subtitle">Kelola semua notifikasi Anda</p>
+
+                <div class="card">
+                    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+                        <span class="card-title"><i class="fas fa-bell"></i> Daftar Notifikasi</span>
+                        <div>
+                            <a href="?page=notifikasi&action=mark_all_read" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-check-double"></i> Tandai Semua Dibaca
+                            </a>
+                            <a href="?page=notifikasi&action=delete_all" class="btn btn-danger btn-sm" onclick="return confirm('Yakin hapus semua notifikasi?')">
+                                <i class="fas fa-trash"></i> Hapus Semua
+                            </a>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Judul</th>
+                                    <th>Pesan</th>
+                                    <th>Waktu</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $stmt = $conn->prepare("SELECT * FROM notifikasi WHERE user_id = ? ORDER BY created_at DESC");
+                                $stmt->bind_param("i", $_SESSION['user_id']);
+                                $stmt->execute();
+                                $notifs = $stmt->get_result();
+                                
+                                if ($notifs->num_rows == 0):
+                                ?>
+                                <tr>
+                                    <td colspan="5" style="text-align:center;padding:40px;color:#6b7280">
+                                        <i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>
+                                        Tidak ada notifikasi
+                                    </td>
+                                </tr>
+                                <?php else: 
+                                    while ($n = $notifs->fetch_assoc()):
+                                ?>
+                                <tr style="<?= $n['is_read'] ? '' : 'background:#f0fdf4' ?>">
+                                    <td>
+                                        <?php if (!$n['is_read']): ?>
+                                            <span class="badge badge-warning">Baru</span>
+                                        <?php else: ?>
+                                            <span class="badge badge-secondary">Dibaca</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><strong><?= htmlspecialchars($n['judul']) ?></strong></td>
+                                    <td><?= htmlspecialchars($n['pesan']) ?></td>
+                                    <td><?= date('d/m/Y H:i', strtotime($n['created_at'])) ?></td>
+                                    <td>
+                                        <?php if (!$n['is_read']): ?>
+                                        <a href="?page=notifikasi&mark_read=<?= $n['id'] ?>" class="btn btn-success btn-sm" title="Tandai dibaca">
+                                            <i class="fas fa-check"></i>
+                                        </a>
+                                        <?php endif; ?>
+                                        <a href="?page=notifikasi&delete=<?= $n['id'] ?>" class="btn btn-danger btn-sm" title="Hapus" onclick="return confirm('Yakin hapus notifikasi ini?')">
+                                            <i class="fas fa-trash"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                <?php endwhile; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
             <?php elseif ($page == 'profile'): ?>
                 <h1 class="page-title">Profile Atasan</h1>
                 <p class="page-subtitle">Kelola informasi akun Anda</p>
@@ -947,7 +1408,8 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
 
                 <?php 
                 $tab = $_GET['tab'] ?? 'semua';
-                
+                // Cari bagian atas file, sebelum HTML
+$atasanDivisi = $conn->query("SELECT * FROM divisi WHERE id = " . (int)$user['divisi_id']);
                 if ($tab == 'semua'): 
                     $allPengumuman = getPengumumanForUser($conn, $_SESSION['user_id'], 'atasan', $atasanDivisi);
                 ?>
@@ -1062,6 +1524,14 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                             </thead>
                             <tbody>
                                 <?php 
+                                $myPengumuman = $conn->query("
+    SELECT p.*, d.nama_divisi 
+    FROM pengumuman p 
+    LEFT JOIN divisi d ON p.divisi_id = d.id 
+    WHERE p.tipe_target = 'semua' 
+    OR (p.tipe_target = 'divisi' AND p.divisi_id = " . (int)($user['divisi_id'] ?? 0) . ")
+    ORDER BY p.created_at DESC
+");
                                 $hasData = false;
                                 while ($row = $myPengumuman->fetch_assoc()): 
                                     $hasData = true;
@@ -1189,7 +1659,6 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
             <!-- END CONTENT PAGES -->
         </div>
     </div>
-        <!-- MODAL: Approve Request -->
     <div class="modal-overlay" id="approveModal">
         <div class="modal">
             <div class="modal-header">
@@ -1215,7 +1684,6 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
         </div>
     </div>
 
-    <!-- MODAL: Reject Request -->
     <div class="modal-overlay" id="rejectModal">
         <div class="modal">
             <div class="modal-header">
@@ -1241,33 +1709,6 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
         </div>
     </div>
 
-    <!-- MODAL: Notifikasi -->
-    <div class="modal-overlay" id="notifModal">
-        <div class="modal">
-            <div class="modal-header">
-                <h3><i class="fas fa-bell"></i> Notifikasi</h3>
-                <button class="modal-close" onclick="closeModal('notifModal')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <?php
-                $stmt = $conn->prepare("SELECT * FROM notifikasi WHERE user_id=? ORDER BY created_at DESC LIMIT 10");
-                $stmt->bind_param("i", $_SESSION['user_id']);
-                $stmt->execute();
-                $notifs = $stmt->get_result();
-                if ($notifs->num_rows == 0) echo '<p>Tidak ada notifikasi</p>';
-                while ($n = $notifs->fetch_assoc()):
-                ?>
-                <div style="padding:15px;border-bottom:1px solid #e2e8f0;<?= $n['is_read']?'':'background:#f0fdf4' ?>">
-                    <strong><?= htmlspecialchars($n['judul']) ?></strong>
-                    <p style="font-size:13px;color:#6b7280"><?= htmlspecialchars($n['pesan']) ?></p>
-                    <small style="color:#9ca3af"><?= date('d/m/Y H:i', strtotime($n['created_at'])) ?></small>
-                </div>
-                <?php endwhile; ?>
-            </div>
-        </div>
-    </div>
-
-    <!-- JAVASCRIPT -->
     <script src="js/script.js"></script>
     <script>
         function openApproveModal(id, nama, jenis) {
@@ -1343,7 +1784,7 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
         }
     </script>
     
-    <?php if ($page == 'dashboard'): ?>
+    <?php if ($page == 'dashboard' && !empty($days)): ?>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const ctx = document.getElementById('absensiChart');
@@ -1351,11 +1792,11 @@ $jabatanList = $conn->query("SELECT * FROM jabatan ORDER BY nama_jabatan");
                 new Chart(ctx, {
                     type: 'bar',
                     data: {
-                        labels: <?= json_encode($days ?? []) ?>,
+                        labels: <?= json_encode($days) ?>,
                         datasets: [
-                            { label: 'Hadir', data: <?= json_encode($hadirData ?? []) ?>, backgroundColor: '#10b981' },
-                            { label: 'Telat', data: <?= json_encode($telatData ?? []) ?>, backgroundColor: '#f59e0b' },
-                            { label: 'Izin/Sakit', data: <?= json_encode($izinData ?? []) ?>, backgroundColor: '#3b82f6' }
+                            { label: 'Hadir', data: <?= json_encode($hadirData) ?>, backgroundColor: '#10b981' },
+                            { label: 'Telat', data: <?= json_encode($telatData) ?>, backgroundColor: '#f59e0b' },
+                            { label: 'Izin/Sakit', data: <?= json_encode($izinData) ?>, backgroundColor: '#3b82f6' }
                         ]
                     },
                     options: {
