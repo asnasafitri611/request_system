@@ -402,7 +402,7 @@ $pengumumanCreated = $conn->query("
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Dashboard Atasan - Request System</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -410,6 +410,9 @@ $pengumumanCreated = $conn->query("
 </head>
 <body>
     <div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div></div>
+
+    <!-- SIDEBAR OVERLAY (Mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
     <!-- SIDEBAR -->
     <div class="sidebar" id="sidebar">
@@ -476,7 +479,12 @@ $pengumumanCreated = $conn->query("
         <!-- NAVBAR -->
         <div class="navbar">
             <div class="nav-left">
-                <button class="toggle-sidebar" onclick="toggleSidebar()">
+                <!-- Desktop toggle -->
+                <button class="toggle-sidebar" onclick="toggleSidebar()" title="Toggle Sidebar">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <!-- Mobile toggle -->
+                <button class="mobile-toggle" onclick="toggleMobileSidebar()" title="Menu">
                     <i class="fas fa-bars"></i>
                 </button>
                 <span class="breadcrumb">Dashboard / <?= ucfirst($page) ?></span>
@@ -488,7 +496,7 @@ $pengumumanCreated = $conn->query("
                         <span class="notif-badge" style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;font-size:10px;padding:2px 6px;border-radius:10px"><?= $notifCount ?></span>
                     <?php endif; ?>
                 </a>
-                <div class="nav-icon" onclick="toggleDarkMode()">
+                <div class="nav-icon" onclick="toggleDarkMode()" title="Dark Mode">
                     <i class="fas fa-moon"></i>
                 </div>
             </div>
@@ -503,34 +511,34 @@ $pengumumanCreated = $conn->query("
                 <p class="page-subtitle">Overview performa tim dan aktivitas karyawan</p>
 
                 <div class="stats-grid">
-                    <div class="stat-card">
+                    <a href="?page=karyawan-saya" class="stat-card">
                         <div class="stat-icon blue"><i class="fas fa-users"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalKaryawan ?></h3>
                             <p>Total Karyawan Bawahan</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=absensi" class="stat-card">
                         <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
                         <div class="stat-info">
                             <h3><?= $jumlahHadir ?></h3>
                             <p>Hadir Hari Ini</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=request" class="stat-card">
                         <div class="stat-icon orange"><i class="fas fa-clock"></i></div>
                         <div class="stat-info">
                             <h3><?= $pendingRequests ?></h3>
                             <p>Request Pending</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=kpi" class="stat-card">
                         <div class="stat-icon red"><i class="fas fa-star"></i></div>
                         <div class="stat-info">
                             <h3><?= $avgKpi ?></h3>
                             <p>Rata-rata KPI Bawahan</p>
                         </div>
-                    </div>
+                    </a>
                 </div>
 
                 <div class="card">
@@ -1400,7 +1408,8 @@ $pengumumanCreated = $conn->query("
 
                 <?php 
                 $tab = $_GET['tab'] ?? 'semua';
-                
+                // Cari bagian atas file, sebelum HTML
+$atasanDivisi = $conn->query("SELECT * FROM divisi WHERE id = " . (int)$user['divisi_id']);
                 if ($tab == 'semua'): 
                     $allPengumuman = getPengumumanForUser($conn, $_SESSION['user_id'], 'atasan', $atasanDivisi);
                 ?>
@@ -1515,6 +1524,14 @@ $pengumumanCreated = $conn->query("
                             </thead>
                             <tbody>
                                 <?php 
+                                $myPengumuman = $conn->query("
+    SELECT p.*, d.nama_divisi 
+    FROM pengumuman p 
+    LEFT JOIN divisi d ON p.divisi_id = d.id 
+    WHERE p.tipe_target = 'semua' 
+    OR (p.tipe_target = 'divisi' AND p.divisi_id = " . (int)($user['divisi_id'] ?? 0) . ")
+    ORDER BY p.created_at DESC
+");
                                 $hasData = false;
                                 while ($row = $myPengumuman->fetch_assoc()): 
                                     $hasData = true;

@@ -223,7 +223,7 @@ if (isset($_GET['mark_pengumuman']) && is_numeric($_GET['mark_pengumuman'])) {
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Dashboard Karyawan - Request System</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -234,6 +234,10 @@ if (isset($_GET['mark_pengumuman']) && is_numeric($_GET['mark_pengumuman'])) {
         <div class="spinner"></div>
     </div>
 
+    <!-- SIDEBAR OVERLAY (Mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- SIDEBAR -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <i class="fas fa-building"></i>
@@ -299,7 +303,12 @@ if (isset($_GET['mark_pengumuman']) && is_numeric($_GET['mark_pengumuman'])) {
     <div class="main-content">
         <div class="navbar">
             <div class="nav-left">
-                <button class="toggle-sidebar" onclick="toggleSidebar()">
+                <!-- Desktop toggle -->
+                <button class="toggle-sidebar" onclick="toggleSidebar()" title="Toggle Sidebar">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <!-- Mobile toggle -->
+                <button class="mobile-toggle" onclick="toggleMobileSidebar()" title="Menu">
                     <i class="fas fa-bars"></i>
                 </button>
                 <span class="breadcrumb">Dashboard / <?= ucfirst($page) ?></span>
@@ -311,7 +320,7 @@ if (isset($_GET['mark_pengumuman']) && is_numeric($_GET['mark_pengumuman'])) {
                         <span class="notif-badge" style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;font-size:10px;padding:2px 6px;border-radius:10px"><?= $notifCount ?></span>
                     <?php endif; ?>
                 </a>
-                <div class="nav-icon" onclick="toggleDarkMode()">
+                <div class="nav-icon" onclick="toggleDarkMode()" title="Dark Mode">
                     <i class="fas fa-moon"></i>
                 </div>
             </div>
@@ -319,7 +328,7 @@ if (isset($_GET['mark_pengumuman']) && is_numeric($_GET['mark_pengumuman'])) {
 
         <div class="content">
             <?php if ($page == 'dashboard'): ?>
-                <h1 class="page-title">Dashboard Karyawan</h1>
+                <h1 class="page-title">Dashboard Karyawan</h1> 
                 <p class="page-subtitle">Selamat datang, <?= htmlspecialchars($_SESSION['nama']) ?>! Hari ini <?= date('d F Y') ?></p>
 
                 <?php if (isset($_GET['success'])): ?>
@@ -372,34 +381,34 @@ if (isset($_GET['mark_pengumuman']) && is_numeric($_GET['mark_pengumuman'])) {
                 <?php endif; ?>
 
                 <div class="stats-grid">
-                    <div class="stat-card">
+                    <a href="?page=absensi" class="stat-card">
                         <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalHadir ?></h3>
                             <p>Total Kehadiran</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=absensi" class="stat-card">
                         <div class="stat-icon orange"><i class="fas fa-clock"></i></div>
                         <div class="stat-info">
                             <h3><?= $todayAbsen ? ($todayAbsen['jam_keluar'] ? 'Selesai' : 'Bekerja') : 'Belum Absen' ?></h3>
                             <p>Status Hari Ini</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=request" class="stat-card">
                         <div class="stat-icon blue"><i class="fas fa-file-alt"></i></div>
                         <div class="stat-info">
                             <h3><?= $pendingReq ?></h3>
                             <p>Request Pending</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=kpi" class="stat-card">
                         <div class="stat-icon red"><i class="fas fa-star"></i></div>
                         <div class="stat-info">
                             <h3><?= $latestKpi ? $latestKpi['nilai'] : '-' ?></h3>
                             <p>Nilai KPI Terakhir</p>
                         </div>
-                    </div>
+                    </a>
                 </div>
 
                 <div class="card">

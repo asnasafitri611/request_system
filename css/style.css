@@ -24,22 +24,44 @@ body {
     overflow-x: hidden;
 }
 
-/* Sidebar */
+/* ============================================
+   SIDEBAR
+   ============================================ */
 .sidebar {
     position: fixed;
     left: 0;
     top: 0;
     height: 100vh;
     width: var(--sidebar-width);
-    background: linear-gradient(180deg, #064e3b 0%, #065f46     100%);
+    background: linear-gradient(180deg, #064e3b 0%, #065f46 100%);
     color: white;
     z-index: 1000;
     transition: var(--transition);
     overflow-y: auto;
     overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
 }
 
 .sidebar.collapsed { width: var(--sidebar-collapsed); }
+
+/* Mobile sidebar */
+@media (max-width: 1024px) {
+    .sidebar {
+        transform: translateX(-100%);
+        width: var(--sidebar-width) !important;
+        box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+    }
+    .sidebar.active {
+        transform: translateX(0);
+    }
+    .sidebar.collapsed {
+        transform: translateX(-100%);
+        width: var(--sidebar-width) !important;
+    }
+    .sidebar.collapsed.active {
+        transform: translateX(0);
+    }
+}
 
 .sidebar-header {
     padding: 25px 20px;
@@ -65,6 +87,10 @@ body {
 }
 
 .sidebar.collapsed .sidebar-header h2 { opacity: 0; width: 0; }
+
+@media (max-width: 1024px) {
+    .sidebar.active .sidebar-header h2 { opacity: 1; width: auto; }
+}
 
 .user-info {
     padding: 20px;
@@ -96,6 +122,10 @@ body {
 }
 
 .sidebar.collapsed .user-info { display: none; }
+
+@media (max-width: 1024px) {
+    .sidebar.active .user-info { display: block; }
+}
 
 .nav-menu { padding: 15px 0; }
 
@@ -133,6 +163,10 @@ body {
 
 .sidebar.collapsed .nav-item span { opacity: 0; width: 0; }
 
+@media (max-width: 1024px) {
+    .sidebar.active .nav-item span { opacity: 1; width: auto; }
+}
+
 .nav-item .badge {
     margin-left: auto;
     background: var(--danger);
@@ -144,7 +178,31 @@ body {
 
 .sidebar.collapsed .nav-item .badge { display: none; }
 
-/* Main Content */
+@media (max-width: 1024px) {
+    .sidebar.active .nav-item .badge { display: inline-block; }
+}
+
+/* ============================================
+   SIDEBAR OVERLAY (Mobile)
+   ============================================ */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+    backdrop-filter: blur(3px);
+}
+
+.sidebar-overlay.active { display: block; }
+
+@media (min-width: 1025px) {
+    .sidebar-overlay { display: none !important; }
+}
+
+/* ============================================
+   MAIN CONTENT
+   ============================================ */
 .main-content {
     margin-left: var(--sidebar-width);
     transition: var(--transition);
@@ -153,7 +211,16 @@ body {
 
 .sidebar.collapsed ~ .main-content { margin-left: var(--sidebar-collapsed); }
 
-/* Navbar */
+@media (max-width: 1024px) {
+    .main-content {
+        margin-left: 0 !important;
+    }
+    .sidebar.collapsed ~ .main-content { margin-left: 0 !important; }
+}
+
+/* ============================================
+   NAVBAR
+   ============================================ */
 .navbar {
     background: var(--white);
     padding: 15px 30px;
@@ -172,6 +239,11 @@ body {
     gap: 20px;
 }
 
+/* ============================================
+   TOGGLE BUTTONS - ROBUST FIX
+   ============================================ */
+
+/* Desktop toggle - ONLY visible on desktop */
 .toggle-sidebar {
     background: none;
     border: none;
@@ -181,13 +253,69 @@ body {
     padding: 8px;
     border-radius: 8px;
     transition: var(--transition);
+    display: inline-flex !important; /* Force show on desktop */
+    align-items: center;
+    justify-content: center;
 }
 
-.toggle-sidebar:hover { background: var(--light); }
+.toggle-sidebar:hover { 
+    background: var(--light); 
+}
+
+/* Mobile toggle - hidden by default (desktop) */
+.mobile-toggle {
+    display: none !important; /* Force hide on desktop */
+    background: none;
+    border: none;
+    font-size: 22px;
+    color: var(--dark);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    transition: var(--transition);
+    align-items: center;
+    justify-content: center;
+}
+
+.mobile-toggle:hover { 
+    background: var(--light); 
+}
+
+/* ============================================
+   MEDIA QUERY: TABLET & MOBILE (≤1024px)
+   ============================================ */
+@media (max-width: 1024px) {
+    /* Hide desktop toggle on mobile */
+    .toggle-sidebar { 
+        display: none !important; 
+    }
+    /* Show mobile toggle on mobile */
+    .mobile-toggle { 
+        display: inline-flex !important; 
+    }
+}
+
+/* ============================================
+   MEDIA QUERY: DESKTOP (>1024px)
+   ============================================ */
+@media (min-width: 1025px) {
+    /* Show desktop toggle on desktop */
+    .toggle-sidebar { 
+        display: inline-flex !important; 
+    }
+    /* Hide mobile toggle on desktop */
+    .mobile-toggle { 
+        display: none !important; 
+    }
+}
 
 .breadcrumb {
     font-size: 14px;
     color: var(--secondary);
+}
+
+@media (max-width: 768px) {
+    .breadcrumb { display: none; }
 }
 
 .nav-right {
@@ -204,6 +332,7 @@ body {
     padding: 8px;
     border-radius: 10px;
     transition: var(--transition);
+    text-decoration: none;
 }
 
 .nav-icon:hover { background: var(--light); color: var(--primary); }
@@ -219,7 +348,9 @@ body {
     border-radius: 10px;
 }
 
-/* Content Area */
+/* ============================================
+   CONTENT AREA
+   ============================================ */
 .content {
     padding: 30px;
 }
@@ -237,7 +368,9 @@ body {
     margin-bottom: 25px;
 }
 
-/* Cards */
+/* ============================================
+   CARDS
+   ============================================ */
 .card {
     background: var(--white);
     border-radius: 16px;
@@ -254,6 +387,8 @@ body {
     align-items: center;
     justify-content: space-between;
     margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .card-title {
@@ -262,7 +397,9 @@ body {
     color: var(--dark);
 }
 
-/* Stats Cards */
+/* ============================================
+   STATS CARDS
+   ============================================ */
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -279,9 +416,13 @@ body {
     gap: 20px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     transition: var(--transition);
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
 }
 
 .stat-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+.stat-card:active { transform: scale(0.98); }
 
 .stat-icon {
     width: 60px;
@@ -291,6 +432,7 @@ body {
     align-items: center;
     justify-content: center;
     font-size: 24px;
+    flex-shrink: 0;
 }
 
 .stat-icon.green { background: var(--primary-light); color: var(--primary-dark); }
@@ -309,12 +451,15 @@ body {
     font-size: 14px;
 }
 
-/* Tables */
-.table-container { overflow-x: auto; }
+/* ============================================
+   TABLES
+   ============================================ */
+.table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 .data-table {
     width: 100%;
     border-collapse: collapse;
+    min-width: 600px;
 }
 
 .data-table th {
@@ -326,17 +471,21 @@ body {
     color: var(--secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    white-space: nowrap;
 }
 
 .data-table td {
     padding: 14px;
     border-bottom: 1px solid #f1f5f9;
     font-size: 14px;
+    white-space: nowrap;
 }
 
 .data-table tr:hover td { background: #f8fafc; }
 
-/* Status Badges */
+/* ============================================
+   STATUS BADGES
+   ============================================ */
 .badge {
     padding: 6px 14px;
     border-radius: 20px;
@@ -351,7 +500,9 @@ body {
 .badge-info { background: #dbeafe; color: #1e40af; }
 .badge-primary { background: var(--primary-light); color: var(--primary-dark); }
 
-/* Buttons */
+/* ============================================
+   BUTTONS
+   ============================================ */
 .btn {
     padding: 10px 20px;
     border-radius: 10px;
@@ -363,6 +514,8 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    white-space: nowrap;
+    text-decoration: none;
 }
 
 .btn-primary { background: var(--primary); color: white; }
@@ -375,7 +528,9 @@ body {
 
 .btn-sm { padding: 6px 14px; font-size: 12px; }
 
-/* Forms */
+/* ============================================
+   FORMS
+   ============================================ */
 .form-group { margin-bottom: 20px; }
 .form-group label {
     display: block;
@@ -392,6 +547,7 @@ body {
     border-radius: 10px;
     font-size: 14px;
     transition: var(--transition);
+    -webkit-appearance: none;
 }
 
 .form-control:focus {
@@ -400,7 +556,9 @@ body {
     box-shadow: 0 0 0 4px rgba(16,185,129,0.1);
 }
 
-/* Modal */
+/* ============================================
+   MODAL
+   ============================================ */
 .modal-overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -410,6 +568,7 @@ body {
     align-items: center;
     justify-content: center;
     backdrop-filter: blur(5px);
+    padding: 15px;
 }
 
 .modal-overlay.active { display: flex; }
@@ -422,6 +581,7 @@ body {
     max-height: 90vh;
     overflow-y: auto;
     animation: modalIn 0.3s ease-out;
+    -webkit-overflow-scrolling: touch;
 }
 
 @keyframes modalIn {
@@ -435,6 +595,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .modal-body { padding: 25px; }
@@ -444,6 +606,7 @@ body {
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+    flex-wrap: wrap;
 }
 
 .modal-close {
@@ -454,7 +617,9 @@ body {
     color: var(--secondary);
 }
 
-/* Search & Filter */
+/* ============================================
+   SEARCH & FILTER
+   ============================================ */
 .search-filter {
     display: flex;
     gap: 15px;
@@ -484,14 +649,65 @@ body {
     font-size: 14px;
 }
 
-/* Charts */
+/* ============================================
+   CHARTS
+   ============================================ */
 .chart-container {
     position: relative;
     height: 300px;
     width: 100%;
 }
 
-/* Dark Mode */
+@media (max-width: 768px) {
+    .chart-container { height: 220px; }
+}
+
+/* ============================================
+   DARK MODE - BASE
+   ============================================ */
+
+/* ============================================
+   DARK MODE: STATUS BADGES - FIX KONTRAS
+   ============================================ */
+body.dark-mode .badge-success { 
+    background: #064e3b !important; 
+    color: #d1fae5 !important; 
+    border: 1px solid #10b981;
+}
+body.dark-mode .badge-warning { 
+    background: #78350f !important; 
+    color: #fef3c7 !important; 
+    border: 1px solid #f59e0b;
+}
+body.dark-mode .badge-danger  { 
+    background: #7f1d1d !important; 
+    color: #fecaca !important; 
+    border: 1px solid #ef4444;
+}
+body.dark-mode .badge-info    { 
+    background: #1e3a8a !important; 
+    color: #dbeafe !important; 
+    border: 1px solid #3b82f6;
+}
+body.dark-mode .badge-primary { 
+    background: #064e3b !important; 
+    color: #d1fae5 !important; 
+    border: 1px solid #10b981;
+}
+
+/* Badge di sidebar nav item (notifikasi count) */
+body.dark-mode .nav-item .badge {
+    background: var(--danger) !important;
+    color: white !important;
+    border: none;
+}
+
+/* Badge di hierarchy node */
+body.dark-mode .hierarchy-node .node-meta .badge {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #475569;
+}
 body.dark-mode {
     background: #0f172a;
     color: #e2e8f0;
@@ -501,29 +717,496 @@ body.dark-mode .card,
 body.dark-mode .navbar,
 body.dark-mode .stat-card {
     background: #1e293b;
-    color: #575b61;
+    color: #e2e8f0;
 }
 
-body.dark-mode .data-table th { background: #334155; color: #94a3b8; }
+body.dark-mode .data-table th { background: #334155; color: #e2e8f0 !important; }
 body.dark-mode .data-table td { border-color: #334155; }
 body.dark-mode .form-control { background: #334155; border-color: #475569; color: white; }
+body.dark-mode .search-box input { background: #334155; border-color: #475569; color: white; }
+body.dark-mode .page-title { color: #e2e8f0; }
+body.dark-mode .card-title { color: #e2e8f0; }
+body.dark-mode .stat-info h3 { color: #e2e8f0; }
+body.dark-mode .toggle-sidebar { color: #e2e8f0; }
+body.dark-mode .mobile-toggle { color: #e2e8f0; }
+body.dark-mode .modal { background: #1e293b; }
+body.dark-mode .modal-header { border-color: #334155; }
+body.dark-mode .modal-footer { border-color: #334155; }
+body.dark-mode .modal-close { color: #94a3b8; }
+body.dark-mode .breadcrumb { color: #cbd5e1 !important; }
+body.dark-mode .nav-icon { color: #94a3b8; }
+body.dark-mode .nav-icon:hover { color: var(--primary); }
+body.dark-mode .content { color: #e2e8f0; }
+body.dark-mode .search-box i { color: #cbd5e1 !important; }
+body.dark-mode .search-box input::placeholder { color: #94a3b8 !important; }
+body.dark-mode .page-subtitle { color: #cbd5e1 !important; }
 
-/* Responsive */
+
+/* ============================================
+   DARK MODE: HIERARKI TABLE - PERBAIKAN TOTAL (AGRESIF)
+   ============================================ */
+
+/* Base: Kolom atasan (rowspan) - hijau gelap */
+body.dark-mode #hierarchyTable tbody tr td[rowspan],
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row td[rowspan],
+body.dark-mode #hierarchyTable.data-table tbody tr td[rowspan],
+body.dark-mode .card #hierarchyTable tbody tr td[rowspan],
+body.dark-mode .content #hierarchyTable tbody tr td[rowspan] {
+    background-color: #064e3b !important;
+    background: #064e3b !important;
+    color: #ecfdf5 !important;
+    border-color: #065f46 !important;
+}
+
+/* Semua child element di rowspan - teks putih */
+body.dark-mode #hierarchyTable tbody tr td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr td[rowspan] i.fas,
+body.dark-mode #hierarchyTable tbody tr td[rowspan] a,
+body.dark-mode #hierarchyTable tbody tr td[rowspan] span,
+body.dark-mode #hierarchyTable tbody tr td[rowspan] strong {
+    color: #ecfdf5 !important;
+}
+
+/* Ikon user-tie di kolom atasan - hijau terang */
+body.dark-mode #hierarchyTable tbody td[rowspan] i.fa-user-tie {
+    color: #34d399 !important;
+}
+
+/* Semua td di hierarchy table - teks terang */
+body.dark-mode #hierarchyTable tbody tr td,
+body.dark-mode #hierarchyTable.data-table tbody td {
+    color: #e2e8f0 !important;
+    border-bottom-color: #334155 !important;
+}
+
+/* ============================================
+   DARK MODE: HIERARKI TABLE - WARNA SERAGAM
+   ============================================ */
+
+/* Hapus background hijau khusus pada kolom atasan (rowspan) */
+body.dark-mode #hierarchyTable tbody tr td[rowspan],
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row td[rowspan],
+body.dark-mode #hierarchyTable.data-table tbody tr td[rowspan],
+body.dark-mode .card #hierarchyTable tbody tr td[rowspan],
+body.dark-mode .content #hierarchyTable tbody tr td[rowspan] {
+    background-color: transparent !important;
+    background: transparent !important;
+    color: #e2e8f0 !important;
+    border-color: #334155 !important;
+}
+
+/* Semua child element di rowspan - warna sama dengan teks biasa */
+body.dark-mode #hierarchyTable tbody tr td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr td[rowspan] i.fas,
+body.dark-mode #hierarchyTable tbody tr td[rowspan] a,
+body.dark-mode #hierarchyTable tbody tr td[rowspan] span,
+body.dark-mode #hierarchyTable tbody tr td[rowspan] strong {
+    color: #e2e8f0 !important;
+}
+
+/* Ikon user-tie di kolom atasan - warna sama */
+body.dark-mode #hierarchyTable tbody td[rowspan] i.fa-user-tie {
+    color: #94a3b8 !important;
+}
+
+/* Hover pada baris - td rowspan sama dengan td biasa */
+body.dark-mode #hierarchyTable tbody tr:hover td[rowspan],
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:hover td[rowspan] {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+/* SAAT DIKLIK: td rowspan sama dengan td biasa */
+body.dark-mode #hierarchyTable tbody tr:active td[rowspan],
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:active td[rowspan],
+body.dark-mode #hierarchyTable tbody tr:focus td[rowspan],
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus td[rowspan],
+body.dark-mode #hierarchyTable tbody tr:focus-within td[rowspan],
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus-within td[rowspan] {
+    background-color: #334155 !important;
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+/* SAAT DIKLIK: teks di rowspan */
+body.dark-mode #hierarchyTable tbody tr:active td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:active td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr:focus td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr:focus-within td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus-within td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr:active td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:active td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr:focus td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr:focus-within td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus-within td[rowspan] i {
+    color: #e2e8f0 !important;
+}
+
+/* ============================================
+   DARK MODE: HIERARKI TABLE - HOVER FIX
+   ============================================ */
+
+/* Hover pada baris - td biasa jadi abu gelap */
+body.dark-mode #hierarchyTable tbody tr:hover td:not([rowspan]),
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:hover td:not([rowspan]) {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+/* Hover pada baris - td rowspan tetap hijau gelap */
+body.dark-mode #hierarchyTable tbody tr:hover td[rowspan],
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:hover td[rowspan] {
+    background-color: #334155 !important;
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+/* ============================================
+   DARK MODE: HIERARKI TABLE - KLIK/ACTIVE/FOCUS FIX (TIDAK PUTIH)
+   ============================================ */
+
+/* SAAT DIKLIK: seluruh baris - background tidak putih */
+body.dark-mode #hierarchyTable tbody tr:active,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:active,
+body.dark-mode #hierarchyTable tbody tr:focus,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus,
+body.dark-mode #hierarchyTable tbody tr:focus-within,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus-within {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+/* SAAT DIKLIK: semua td - background tidak putih */
+body.dark-mode #hierarchyTable tbody tr:active td,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:active td,
+body.dark-mode #hierarchyTable tbody tr:focus td,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus td,
+body.dark-mode #hierarchyTable tbody tr:focus-within td,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus-within td {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+/* SAAT DIKLIK: td rowspan tetap hijau gelap */
+body.dark-mode #hierarchyTable tbody tr:active td[rowspan],
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:active td[rowspan],
+body.dark-mode #hierarchyTable tbody tr:focus td[rowspan],
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus td[rowspan],
+body.dark-mode #hierarchyTable tbody tr:focus-within td[rowspan],
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus-within td[rowspan] {
+    background-color: #064e3b !important;
+    background: #064e3b !important;
+    color: #ecfdf5 !important;
+}
+
+/* SAAT DIKLIK: semua teks di rowspan tetap terlihat */
+body.dark-mode #hierarchyTable tbody tr:active td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:active td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr:focus td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr:focus-within td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus-within td[rowspan] *,
+body.dark-mode #hierarchyTable tbody tr:active td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:active td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr:focus td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr:focus-within td[rowspan] i,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus-within td[rowspan] i {
+    color: #ecfdf5 !important;
+}
+
+/* SAAT DIKLIK: td biasa - background abu gelap (bukan putih) */
+body.dark-mode #hierarchyTable tbody tr:active td:not([rowspan]),
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:active td:not([rowspan]),
+body.dark-mode #hierarchyTable tbody tr:focus td:not([rowspan]),
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus td:not([rowspan]),
+body.dark-mode #hierarchyTable tbody tr:focus-within td:not([rowspan]),
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus-within td:not([rowspan]) {
+    background-color: #334155 !important;
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+/* SAAT DIKLIK: semua teks di td biasa tetap terlihat */
+body.dark-mode #hierarchyTable tbody tr:active td:not([rowspan]) *,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:active td:not([rowspan]) *,
+body.dark-mode #hierarchyTable tbody tr:focus td:not([rowspan]) *,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus td:not([rowspan]) *,
+body.dark-mode #hierarchyTable tbody tr:focus-within td:not([rowspan]) *,
+body.dark-mode #hierarchyTable tbody tr.hierarchy-row:focus-within td:not([rowspan]) * {
+    color: #e2e8f0 !important;
+}
+
+/* Link/bawahan nama */
+body.dark-mode #hierarchyTable tbody td a,
+body.dark-mode #hierarchyTable tbody td strong {
+    color: #f1f5f9 !important;
+}
+
+/* ============================================
+   DARK MODE: HIERARKI TREE
+   ============================================ */
+body.dark-mode .hierarchy-tree { background: transparent; }
+
+body.dark-mode .hierarchy-node {
+    background: #1e293b !important;
+    border-left-color: #34d399 !important;
+}
+
+body.dark-mode .hierarchy-node:hover {
+    background: #334155 !important;
+}
+
+body.dark-mode .hierarchy-node .node-name {
+    color: #f1f5f9 !important;
+}
+
+body.dark-mode .hierarchy-node .node-meta {
+    color: #94a3b8 !important;
+}
+
+body.dark-mode .hierarchy-node .node-meta .badge {
+    color: white !important;
+}
+
+body.dark-mode .hierarchy-children {
+    border-left-color: #475569 !important;
+}
+
+body.dark-mode .hierarchy-node .node-level {
+    color: #94a3b8 !important;
+}
+
+/* ============================================
+   DARK MODE: SEMUA TABEL DI DALAM CARD
+   ============================================ */
+body.dark-mode .card .table-container .data-table tbody tr td {
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .card .table-container .data-table tbody tr:hover td {
+    background: #334155 !important;
+}
+
+body.dark-mode .card .table-container .data-table tbody tr td strong {
+    color: #f1f5f9 !important;
+}
+
+body.dark-mode .card .table-container .data-table tbody tr td small {
+    color: #94a3b8 !important;
+}
+
+/* ============================================
+   DARK MODE: TABEL PENGUMUMAN - FIX BACKGROUND
+   ============================================ */
+
+/* Semua baris tabel pengumuman - background gelap */
+body.dark-mode .card .table-container table tbody tr,
+body.dark-mode .card .table-container .data-table tbody tr {
+    background: #1e293b !important;
+}
+
+/* Hover baris tabel pengumuman - abu sedikit lebih terang */
+body.dark-mode .card .table-container table tbody tr:hover,
+body.dark-mode .card .table-container .data-table tbody tr:hover {
+    background: #334155 !important;
+}
+
+/* Semua td di tabel pengumuman - teks terang */
+body.dark-mode .card .table-container table tbody tr td,
+body.dark-mode .card .table-container .data-table tbody tr td {
+    color: #e2e8f0 !important;
+    border-bottom-color: #334155 !important;
+}
+
+/* Link di tabel pengumuman */
+body.dark-mode .card .table-container table tbody tr td a,
+body.dark-mode .card .table-container .data-table tbody tr td a {
+    color: #60a5fa !important;
+}
+
+/* Badge di tabel pengumuman */
+body.dark-mode .card .table-container table tbody tr td .badge,
+body.dark-mode .card .table-container .data-table tbody tr td .badge {
+    color: white !important;
+}
+
+/* Fix untuk baris yang mungkin punya class alternatif/zebra */
+body.dark-mode .card .table-container table tbody tr:nth-child(odd),
+body.dark-mode .card .table-container table tbody tr:nth-child(even),
+body.dark-mode .card .table-container .data-table tbody tr:nth-child(odd),
+body.dark-mode .card .table-container .data-table tbody tr:nth-child(even) {
+    background: #1e293b !important;
+}
+
+body.dark-mode .card .table-container table tbody tr:nth-child(odd):hover,
+body.dark-mode .card .table-container table tbody tr:nth-child(even):hover,
+body.dark-mode .card .table-container .data-table tbody tr:nth-child(odd):hover,
+body.dark-mode .card .table-container .data-table tbody tr:nth-child(even):hover {
+    background: #334155 !important;
+}
+
+/* ============================================
+   DARK MODE: KARYAWAN TANPA ATASAN
+   ============================================ */
+body.dark-mode .card .table-container table tbody tr td {
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .card .table-container table tbody tr td .badge {
+    color: white !important;
+}
+
+/* ============================================
+   DARK MODE: FORM DI DALAM CARD
+   ============================================ */
+body.dark-mode .card input[type="date"],
+body.dark-mode .card select.form-control,
+body.dark-mode .card input[type="text"].form-control,
+body.dark-mode .card input[type="email"].form-control,
+body.dark-mode .card input[type="password"].form-control,
+body.dark-mode .card textarea.form-control,
+body.dark-mode .card select {
+    background: #334155 !important;
+    border-color: #475569 !important;
+    color: #f1f5f9 !important;
+}
+
+body.dark-mode .card input::placeholder,
+body.dark-mode .card textarea::placeholder {
+    color: #94a3b8 !important;
+}
+
+body.dark-mode .card .form-group label {
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .card small {
+    color: #94a3b8 !important;
+}
+
+/* ============================================
+   DARK MODE: ALERT BOXES
+   ============================================ */
+body.dark-mode .card > div[style*="background:#d1fae5"],
+body.dark-mode .content > div[style*="background:#d1fae5"] {
+    background: #064e3b !important;
+    color: #ecfdf5 !important;
+    border-left-color: #10b981 !important;
+}
+
+body.dark-mode .card > div[style*="background:#fee2e2"],
+body.dark-mode .content > div[style*="background:#fee2e2"] {
+    background: #450a0a !important;
+    color: #fecaca !important;
+    border-left-color: #ef4444 !important;
+}
+
+/* ============================================
+   DARK MODE: PAGINATION
+   ============================================ */
+body.dark-mode .pagination button { background: #334155; border-color: #475569; color: #e2e8f0; }
+body.dark-mode .pagination button:hover, 
+body.dark-mode .pagination button.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
 @media (max-width: 1024px) {
-    .sidebar { transform: translateX(-100%); }
-    .sidebar.active { transform: translateX(0); }
-    .main-content { margin-left: 0; }
-    .sidebar.collapsed ~ .main-content { margin-left: 0; }
+    .content { padding: 20px 15px; }
+    .navbar { padding: 12px 15px; }
+    .page-title { font-size: 22px; }
 }
 
 @media (max-width: 768px) {
-    .content { padding: 20px 15px; }
+    .content { padding: 15px 12px; }
     .stats-grid { grid-template-columns: 1fr; }
-    .navbar { padding: 15px 20px; }
+    .navbar { padding: 10px 12px; }
     .search-filter { flex-direction: column; }
+    .page-title { font-size: 20px; }
+    .page-subtitle { font-size: 13px; }
+
+    .stat-card { padding: 18px; gap: 15px; }
+    .stat-icon { width: 50px; height: 50px; font-size: 20px; }
+    .stat-info h3 { font-size: 22px; }
+
+    .card { padding: 18px; border-radius: 12px; }
+    .card-header { margin-bottom: 15px; }
+
+    .modal { width: 95%; border-radius: 16px; }
+    .modal-header { padding: 18px; }
+    .modal-body { padding: 18px; }
+    .modal-footer { padding: 15px 18px; }
+
+    .btn { padding: 10px 16px; font-size: 13px; }
+    .form-control { padding: 10px 14px; }
+
+    .data-table th, .data-table td { padding: 10px 12px; font-size: 13px; }
+
+    .pengumuman-grid { grid-template-columns: 1fr; }
+
+    /* ============================================
+       MOBILE KECIL: HIERARKI TABLE EXTRA FIX
+       ============================================ */
+    #hierarchyTable.data-table tbody td {
+        font-size: 12px;
+        padding: 8px 10px;
+    }
+
+    #hierarchyTable.data-table tbody td[rowspan] {
+        font-size: 13px;
+    }
+
+    .hierarchy-node {
+        flex-wrap: wrap;
+    }
+
+    .hierarchy-node .node-info {
+        min-width: 0;
+        flex: 1 1 100%;
+    }
+
+    .hierarchy-node .node-badge,
+    .hierarchy-node .node-level {
+        margin-top: 5px;
+    }
+
+    /* Stats di mobile kecil */
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Card padding di mobile kecil */
+    .card {
+        padding: 12px;
+        border-radius: 10px;
+    }
+
+    /* Button di mobile kecil */
+    .btn {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+
+    .btn-sm {
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+
+    /* Table container di mobile kecil */
+    .table-container {
+        margin: 0 -12px;
+        padding: 0 12px;
+    }
 }
 
-/* Loading */
+/* ============================================
+   LOADING
+   ============================================ */
 .loading-overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -536,6 +1219,8 @@ body.dark-mode .form-control { background: #334155; border-color: #475569; color
 
 .loading-overlay.active { display: flex; }
 
+body.dark-mode .loading-overlay { background: rgba(15,23,42,0.9); }
+
 .spinner {
     width: 50px;
     height: 50px;
@@ -547,34 +1232,15 @@ body.dark-mode .form-control { background: #334155; border-color: #475569; color
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Animations */
+/* ============================================
+   ANIMATIONS
+   ============================================ */
 .fade-in { animation: fadeIn 0.5s ease-out; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-/* Pagination */
-.pagination {
-    display: flex;
-    gap: 5px;
-    margin-top: 20px;
-    justify-content: center;
-}
-
-.pagination button {
-    padding: 8px 14px;
-    border: 1px solid #e2e8f0;
-    background: white;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: var(--transition);
-}
-
-.pagination button:hover, .pagination button.active {
-    background: var(--primary);
-    color: white;
-    border-color: var(--primary);
-}
-
-/* Toast Notification */
+/* ============================================
+   TOAST NOTIFICATION
+   ============================================ */
 .toast {
     position: fixed;
     top: 20px;
@@ -587,31 +1253,415 @@ body.dark-mode .form-control { background: #334155; border-color: #475569; color
     transform: translateX(400px);
     transition: transform 0.3s ease-out;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    max-width: 90vw;
+    word-break: break-word;
 }
 
 .toast.show { transform: translateX(0); }
 .toast.success { background: var(--success); }
 .toast.error { background: var(--danger); }
 .toast.warning { background: var(--warning); }
-/* Badge variations */
+
+@media (max-width: 480px) {
+    .toast {
+        left: 10px;
+        right: 10px;
+        transform: translateY(-100px);
+        top: 10px;
+    }
+    .toast.show { transform: translateY(0); }
+}
+
+/* ============================================
+   BADGE VARIATIONS
+   ============================================ */
 .badge-purple { background: #8b5cf6; color: white; }
 .badge-blue { background: #3b82f6; color: white; }
 
-/* Pengumuman card styles */
+/* ============================================
+   PENGUMUMAN CARD STYLES
+   ============================================ */
 .pengumuman-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
     gap: 20px;
 }
 
-/* File upload styling */
+@media (max-width: 768px) {
+    .pengumuman-grid { grid-template-columns: 1fr; }
+}
+
+/* ============================================
+   FILE UPLOAD STYLING
+   ============================================ */
 input[type="file"].form-control {
     padding: 8px;
     font-size: 14px;
 }
 
-/* Modal image preview */
+/* ============================================
+   MODAL IMAGE PREVIEW
+   ============================================ */
 .modal-body img {
     max-width: 100%;
     height: auto;
+}
+
+/* ============================================
+   SCROLLBAR STYLING
+   ============================================ */
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+.sidebar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+
+
+/* ============================================
+   MOBILE RESPONSIVE: HIERARKI TABLE (CARD STYLE)
+   ============================================ */
+
+/* Untuk semua layar kecil (termasuk tablet portrait) */
+@media (max-width: 1024px) {
+    /* Wrapper tabel */
+    .table-container:has(#hierarchyTable) {
+        overflow-x: hidden !important;
+        padding: 0 !important;
+    }
+
+    #hierarchyTable,
+    #hierarchyTable.data-table {
+        min-width: unset !important;
+        width: 100% !important;
+        display: block !important;
+    }
+
+    /* Sembunyikan thead */
+    #hierarchyTable thead,
+    #hierarchyTable thead tr {
+        display: none !important;
+    }
+
+    /* tbody jadi block */
+    #hierarchyTable tbody {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    /* ============================================
+       GROUP: Satu atasan + semua bawahannya jadi 1 card
+       ============================================ */
+    
+    /* Setiap TR jadi block, tapi yang punya rowspan (atasan) jadi header card */
+    #hierarchyTable tbody tr.hierarchy-row,
+    #hierarchyTable tbody tr {
+        display: block !important;
+        width: 100% !important;
+        margin-bottom: 0 !important;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* TR yang punya rowspan (baris pertama grup) - jadi header card */
+    #hierarchyTable tbody tr:has(td[rowspan]),
+    #hierarchyTable tbody tr.hierarchy-row:has(td[rowspan]) {
+        margin-bottom: 16px !important;
+        background: #1e293b !important;
+        border: 1px solid #334155 !important;
+        border-radius: 12px !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
+
+    /* Semua td jadi block */
+    #hierarchyTable tbody tr td {
+        display: block !important;
+        width: 100% !important;
+        padding: 10px 14px !important;
+        border: none !important;
+        border-bottom: 1px solid #334155 !important;
+        text-align: left !important;
+        white-space: normal !important;
+        background: transparent !important;
+        color: #e2e8f0 !important;
+        font-size: 13px !important;
+    }
+
+    #hierarchyTable tbody tr td:last-child {
+        border-bottom: none !important;
+    }
+
+    /* ============================================
+       KOLOM ATASAN (ROWSPAN) - HEADER CARD
+       ============================================ */
+    
+    /* Kolom atasan (rowspan) - style khusus sebagai header */
+    #hierarchyTable tbody tr td[rowspan] {
+        background: #0f172a !important;
+        color: #e2e8f0 !important;
+        border-bottom: 2px solid #334155 !important;
+        border-radius: 0 !important;
+        padding: 14px !important;
+        margin-bottom: 0 !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+    }
+
+    /* Label di depan value untuk atasan */
+    #hierarchyTable tbody tr td[rowspan]::before {
+        content: attr(data-label);
+        display: inline-block;
+        font-weight: 600;
+        color: #94a3b8;
+        min-width: 120px;
+        margin-right: 8px;
+    }
+
+    /* Ikon di kolom atasan */
+    #hierarchyTable tbody tr td[rowspan] i {
+        color: #94a3b8 !important;
+    }
+
+    /* ============================================
+       BARIS BAWAHAN (tanpa rowspan) - di dalam card
+       ============================================ */
+    
+    /* Baris bawahan - border pemisah antar bawahan */
+    #hierarchyTable tbody tr:not(:has(td[rowspan])) td {
+        border-bottom: 1px dashed #334155 !important;
+    }
+
+    #hierarchyTable tbody tr:not(:has(td[rowspan])):last-child td {
+        border-bottom: none !important;
+    }
+
+    /* Label di depan value untuk bawahan */
+    #hierarchyTable tbody tr td::before {
+        content: attr(data-label);
+        display: inline-block;
+        font-weight: 600;
+        color: #94a3b8;
+        min-width: 120px;
+        margin-right: 8px;
+    }
+
+    /* Aksi button */
+    #hierarchyTable tbody tr td:last-child::before {
+        content: "Aksi:";
+    }
+
+    /* ============================================
+   HIERARKI TREE - LAYOUT HORIZONTAL
+   ============================================ */
+
+/* Container utama tree */
+.hierarchy-tree {
+    display: flex;
+    flex-direction: row;           /* ✅ Horizontal: node sejajar ke kanan */
+    align-items: flex-start;
+    gap: 30px;
+    padding: 20px;
+    overflow-x: auto;              /* Scroll horizontal kalau terlalu lebar */
+    min-height: 400px;
+}
+
+/* Wrapper setiap node + children-nya */
+.hierarchy-node-wrapper {
+    display: flex;
+    flex-direction: column;        /* Node di atas, children di bawahnya */
+    align-items: center;
+    gap: 20px;
+}
+
+/* Node individu (kotak karyawan) */
+.hierarchy-node {
+    background: var(--white);
+    border-radius: 12px;
+    padding: 16px 20px;
+    min-width: 180px;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    border-left: 4px solid var(--primary);
+    position: relative;
+    z-index: 2;
+}
+
+/* Container children dari satu node */
+.hierarchy-children {
+    display: flex;
+    flex-direction: row;           /* ✅ Children sejajar horizontal */
+    gap: 20px;
+    padding-top: 20px;
+    position: relative;
+}
+
+/* Garis penghubung vertikal (dari node ke children) */
+.hierarchy-children::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 2px;
+    height: 20px;
+    background: #cbd5e1;
+    transform: translateX(-50%);
+}
+
+/* Garis horizontal antar children */
+.hierarchy-children .hierarchy-node-wrapper::before {
+    content: '';
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    width: 2px;
+    height: 20px;
+    background: #cbd5e1;
+}
+
+/* ============================================
+   HIERARKI TREE - NODE CONTENT
+   ============================================ */
+
+.hierarchy-node .node-avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    margin: 0 auto 10px;
+}
+
+.hierarchy-node .node-name {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--dark);
+    margin-bottom: 4px;
+}
+
+.hierarchy-node .node-meta {
+    font-size: 12px;
+    color: var(--secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.hierarchy-node .node-meta .badge {
+    margin-top: 6px;
+}
+
+.hierarchy-node .node-level {
+    font-size: 11px;
+    color: var(--primary);
+    font-weight: 600;
+    margin-top: 4px;
+}
+
+/* ============================================
+   HIERARKI TREE - RESPONSIVE
+   ============================================ */
+
+@media (max-width: 1024px) {
+    .hierarchy-tree {
+        flex-direction: column;      /* Di tablet/mobile: tetap vertical */
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .hierarchy-children {
+        flex-direction: column;
+        align-items: center;
+        padding-top: 15px;
+        padding-left: 0;
+    }
+    
+    .hierarchy-node {
+        min-width: 160px;
+        padding: 12px 16px;
+    }
+}
+
+    /* ============================================
+       DARK MODE MOBILE - HIERARKI TABLE
+       ============================================ */
+    body.dark-mode #hierarchyTable tbody tr:has(td[rowspan]),
+    body.dark-mode #hierarchyTable tbody tr.hierarchy-row:has(td[rowspan]) {
+        background: #1e293b !important;
+        border-color: #334155 !important;
+    }
+
+    body.dark-mode #hierarchyTable tbody tr td[rowspan] {
+        background: #0f172a !important;
+        color: #e2e8f0 !important;
+        border-bottom-color: #334155 !important;
+    }
+
+    body.dark-mode #hierarchyTable tbody tr td {
+        color: #e2e8f0 !important;
+        border-bottom-color: #334155 !important;
+    }
+
+    body.dark-mode #hierarchyTable tbody tr td[rowspan] i {
+        color: #94a3b8 !important;
+    }
+}
+
+/* Untuk HP kecil */
+@media (max-width: 768px) {
+    #hierarchyTable tbody tr:has(td[rowspan]),
+    #hierarchyTable tbody tr.hierarchy-row:has(td[rowspan]) {
+        margin-bottom: 12px !important;
+        border-radius: 10px !important;
+    }
+
+    #hierarchyTable tbody tr td {
+        padding: 8px 12px !important;
+        font-size: 12px !important;
+    }
+
+    #hierarchyTable tbody tr td[rowspan] {
+        padding: 12px !important;
+        font-size: 13px !important;
+    }
+
+    #hierarchyTable tbody tr td::before {
+        min-width: 100px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    #hierarchyTable tbody tr:has(td[rowspan]),
+    #hierarchyTable tbody tr.hierarchy-row:has(td[rowspan]) {
+        margin-bottom: 10px !important;
+        border-radius: 8px !important;
+    }
+
+    #hierarchyTable tbody tr td {
+        padding: 6px 10px !important;
+        font-size: 11px !important;
+    }
+
+    #hierarchyTable tbody tr td[rowspan] {
+        padding: 10px !important;
+        font-size: 12px !important;
+    }
+
+    #hierarchyTable tbody tr td::before {
+        min-width: 90px !important;
+        font-size: 11px !important;
+    }
+    
+}
+/* ============================================
+   PRINT STYLES
+   ============================================ */
+@media print {
+    .sidebar, .navbar, .sidebar-overlay, .mobile-toggle, .toggle-sidebar { display: none !important; }
+    .main-content { margin-left: 0 !important; }
+    .card { box-shadow: none; border: 1px solid #e2e8f0; break-inside: avoid; }
 }

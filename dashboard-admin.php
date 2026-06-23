@@ -98,7 +98,6 @@ if (isset($_POST['assign_karyawan'])) {
     $karyawanId = (int) $_POST['karyawan_id'];
     $atasanId = (int) $_POST['atasan_id'];
 
-    // Cek circular reference
     if (isCircularReference($conn, $karyawanId, $atasanId)) {
         header("Location: dashboard-admin.php?page=manajemen-atasan&error=circular");
         exit;
@@ -108,12 +107,10 @@ if (isset($_POST['assign_karyawan'])) {
     $stmt->bind_param("ii", $atasanId, $karyawanId);
     $stmt->execute();
 
-    // Update atasan_id juga untuk backward compatibility
     $stmt = $conn->prepare("UPDATE users SET atasan_id = ? WHERE id = ?");
     $stmt->bind_param("ii", $atasanId, $karyawanId);
     $stmt->execute();
 
-    // Notifikasi ke atasan
     $stmt = $conn->prepare("SELECT nama FROM users WHERE id = ?");
     $stmt->bind_param("i", $karyawanId);
     $stmt->execute();
@@ -176,6 +173,7 @@ if (isset($_POST['update_profile'])) {
     $role = $_POST['role'];
     $divisi_id = !empty($_POST['divisi_id']) ? (int)$_POST['divisi_id'] : null;
     $jabatan_id = !empty($_POST['jabatan_id']) ? (int)$_POST['jabatan_id'] : null;
+
     if (empty($username)) {
         $profileError = "Username tidak boleh kosong!";
     } else {
@@ -271,35 +269,7 @@ if (isset($_POST['change_password'])) {
         }
     }
 }
-// ============================================
-// HANDLE GANTI PASSWORD PROFILE
-// ============================================
 
-if (isset($_POST['change_password'])) {
-    $old_password = $_POST['old_password'];
-    $new_password = $_POST['new_password'];
-    $confirm_password = $_POST['confirm_password'];
-    
-    // Validasi password lama
-    $stmt = $conn->prepare("SELECT password FROM users WHERE id = ?");
-    $stmt->bind_param("i", $_SESSION['user_id']);
-    $stmt->execute();
-    $result = $stmt->get_result()->fetch_assoc();
-    
-    if (!password_verify($old_password, $result['password'])) {
-        $passError = "Password lama salah!";
-    } elseif ($new_password !== $confirm_password) {
-        $passError = "Password baru dan konfirmasi tidak cocok!";
-    } elseif (strlen($new_password) < 6) {
-        $passError = "Password minimal 6 karakter!";
-    } else {
-        $hashed = password_hash($new_password, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
-        $stmt->bind_param("si", $hashed, $_SESSION['user_id']);
-        $stmt->execute();
-        $passMsg = "Password berhasil diubah!";
-    }
-}
 // ============================================
 // HANDLE LAPORAN REQUEST SYSTEM PDF & CSV
 // ============================================
@@ -832,7 +802,7 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Dashboard Admin - Request System</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -861,57 +831,164 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
             cursor: not-allowed;
             pointer-events: none;
         }
-        /* Tree hierarchy styles */
-        .hierarchy-tree { padding: 10px; }
+        /* ============================================
+           HIERARKI TREE - HORIZONTAL LAYOUT
+           ============================================ */
+        .hierarchy-tree {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 40px;
+            padding: 20px;
+            overflow-x: auto;
+            min-height: 400px;
+        }
+        .hierarchy-branch {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+        }
         .hierarchy-node {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 10px;
-            margin-bottom: 8px;
+            gap: 12px;
+            padding: 14px 18px;
             background: #f8fafc;
-            border-radius: 10px;
+            border-radius: 12px;
             border-left: 4px solid #3b82f6;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
             transition: all 0.2s;
+            min-width: 200px;
+            position: relative;
+            z-index: 2;
         }
-        .hierarchy-node:hover { background: #e0f2fe; }
+        .hierarchy-node:hover {
+            background: #e0f2fe;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
         .hierarchy-node .node-avatar {
-            width: 40px;
-            height: 40px;
+            width: 44px;
+            height: 44px;
             border-radius: 50%;
             object-fit: cover;
+            flex-shrink: 0;
         }
-        .hierarchy-node .node-info { flex: 1; }
+        .hierarchy-node .node-info {
+            flex: 1;
+            min-width: 0;
+        }
         .hierarchy-node .node-name {
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 700;
             color: #1f2937;
+            margin-bottom: 3px;
         }
         .hierarchy-node .node-meta {
             font-size: 12px;
             color: #6b7280;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
         }
-        .hierarchy-node .node-badge {
-            padding: 2px 8px;
-            border-radius: 10px;
+        .hierarchy-node .node-meta .badge {
             font-size: 11px;
-            font-weight: 600;
-            color: white;
+            padding: 2px 8px;
         }
         .hierarchy-node .node-level {
-            font-size: 12px;
+            font-size: 11px;
             color: #9ca3af;
-            margin-left: 10px;
+            white-space: nowrap;
         }
         .hierarchy-children {
-            margin-left: 30px;
-            border-left: 2px dashed #cbd5e1;
-            padding-left: 15px;
+            display: flex;
+            flex-direction: row;
+            gap: 25px;
+            align-items: flex-start;
+            position: relative;
+            padding-top: 30px;
+        }
+        .hierarchy-children::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 30px;
+            background: #cbd5e1;
+        }
+        /* ============================================
+           DARK MODE: HIERARKI TREE
+           ============================================ */
+        body.dark-mode .hierarchy-tree { background: transparent; }
+        body.dark-mode .hierarchy-node {
+            background: #1e293b !important;
+            border-left-color: #34d399 !important;
+        }
+        body.dark-mode .hierarchy-node:hover { background: #334155 !important; }
+        body.dark-mode .hierarchy-node .node-name { color: #f1f5f9 !important; }
+        body.dark-mode .hierarchy-node .node-meta { color: #94a3b8 !important; }
+        body.dark-mode .hierarchy-children::before { background: #475569; }
+        /* ============================================
+           MOBILE RESPONSIVE: HIERARKI TREE
+           ============================================ */
+        @media (max-width: 1024px) {
+            .hierarchy-tree {
+                flex-direction: column;
+                align-items: center;
+                gap: 20px;
+                padding: 10px;
+            }
+            .hierarchy-branch {
+                width: 100%;
+                max-width: 400px;
+            }
+            .hierarchy-children {
+                flex-direction: column;
+                align-items: center;
+                width: 100%;
+                padding-top: 20px;
+            }
+            .hierarchy-children::before {
+                height: 20px;
+            }
+            .hierarchy-node {
+                min-width: unset;
+                width: 100%;
+                max-width: 350px;
+            }
+        }
+        @media (max-width: 768px) {
+            .hierarchy-tree {
+                gap: 15px;
+                padding: 5px;
+            }
+            .hierarchy-node {
+                padding: 10px 14px;
+                max-width: 300px;
+            }
+            .hierarchy-node .node-avatar {
+                width: 36px;
+                height: 36px;
+            }
+            .hierarchy-node .node-name {
+                font-size: 13px;
+            }
+            .hierarchy-node .node-meta {
+                font-size: 11px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div></div>
+
+    <!-- SIDEBAR OVERLAY (Mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
     <!-- SIDEBAR -->
     <div class="sidebar" id="sidebar">
@@ -964,67 +1041,60 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
         </div>
     </div>
 
-    <!-- MAIN CONTENT -->
     <div class="main-content">
-        
-        <!-- NAVBAR -->
         <div class="navbar">
             <div class="nav-left">
-                <button class="toggle-sidebar" onclick="toggleSidebar()">
+                <!-- Desktop toggle -->
+                <button class="toggle-sidebar" onclick="toggleSidebar()" title="Toggle Sidebar">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <!-- Mobile toggle -->
+                <button class="mobile-toggle" onclick="toggleMobileSidebar()" title="Menu">
                     <i class="fas fa-bars"></i>
                 </button>
                 <span class="breadcrumb">Dashboard / <?= ucfirst($page) ?></span>
             </div>
             <div class="nav-right">
-                <div class="nav-icon" onclick="openModal('notifModal')" style="position:relative">
-                    <i class="fas fa-bell"></i>
-                    <?php if ($notifCount > 0): ?>
-                        <span class="notif-count"><?= $notifCount ?></span>
-                    <?php endif; ?>
-                </div>
-                <div class="nav-icon" onclick="toggleDarkMode()">
+                <div class="nav-icon" onclick="toggleDarkMode()" title="Dark Mode">
                     <i class="fas fa-moon"></i>
                 </div>
             </div>
         </div>
 
-        <!-- CONTENT AREA -->
         <div class="content">
-
-            <!-- PAGE: DASHBOARD -->
             <?php if ($page == 'dashboard'): ?>
                 <h1 class="page-title">Dashboard Admin</h1>
                 <p class="page-subtitle">Panel kontrol utama sistem</p>
 
                 <div class="stats-grid">
-                    <div class="stat-card">
+                    <a href="?page=users" class="stat-card">
                         <div class="stat-icon blue"><i class="fas fa-users"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalUsers ?></h3>
                             <p>Total User</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=karyawan" class="stat-card">
                         <div class="stat-icon green"><i class="fas fa-user-tie"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalKaryawan ?></h3>
                             <p>Total Karyawan</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=manajemen-atasan" class="stat-card">
                         <div class="stat-icon orange"><i class="fas fa-user-shield"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalAtasan ?></h3>
                             <p>Total Atasan</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
+                    </a>
+                    <a href="?page=laporan" class="stat-card">
                         <div class="stat-icon red"><i class="fas fa-file-alt"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalRequests ?></h3>
                             <p>Total Request</p>
                         </div>
-                    </div>
+                    </a>
                 </div>
 
                 <div class="card">
@@ -1036,20 +1106,19 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                     </div>
                 </div>
 
-            <!-- PAGE: USERS -->
             <?php elseif ($page == 'users'): ?>
                 <h1 class="page-title">Manajemen User</h1>
                 <p class="page-subtitle">Kelola data pengguna sistem</p>
 
                 <div class="stats-grid" style="margin-bottom:20px">
-                    <div class="stat-card">
+                    <div class="stat-card" style="cursor:default">
                         <div class="stat-icon green"><i class="fas fa-user-check"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalUsersAktif ?></h3>
                             <p>Karyawan Aktif</p>
                         </div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card" style="cursor:default">
                         <div class="stat-icon gray"><i class="fas fa-user-slash"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalUsersTidakAktif ?></h3>
@@ -1129,245 +1198,7 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                         </table>
                     </div>
                 </div>
-                            <!-- PAGE: MANAJEMEN ATASAN -->
-            <?php elseif ($page == 'manajemen-atasan'): ?>
-                <h1 class="page-title">Manajemen Atasan</h1>
-                <p class="page-subtitle">Atur karyawan bawahan untuk setiap atasan</p>
 
-                <?php if (isset($_GET['success'])): ?>
-                    <div style="background:#d1fae5;color:#065f46;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #10b981">
-                        <i class="fas fa-check-circle"></i> 
-                        <?php 
-                        switch($_GET['success']) {
-                            case 'assigned': echo 'Karyawan berhasil ditugaskan ke atasan!'; break;
-                            case 'removed': echo 'Karyawan berhasil dihapus dari daftar bawahan!'; break;
-                            case 'moved': echo 'Karyawan berhasil dipindahkan ke atasan lain!'; break;
-                            default: echo 'Operasi berhasil!';
-                        }
-                        ?>
-                    </div>
-                <?php endif; ?>
-
-                <div class="stats-grid" style="margin-bottom:20px">
-                    <div class="stat-card">
-                        <div class="stat-icon blue"><i class="fas fa-user-shield"></i></div>
-                        <div class="stat-info">
-                            <h3><?= $totalAtasanAktif ?></h3>
-                            <p>Total Atasan Aktif</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon green"><i class="fas fa-user-check"></i></div>
-                        <div class="stat-info">
-                            <h3><?= $totalKaryawanDenganAtasan ?></h3>
-                            <p>Karyawan Punya Atasan</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon orange"><i class="fas fa-user-plus"></i></div>
-                        <div class="stat-info">
-                            <h3><?= $totalKaryawanTanpaAtasan ?></h3>
-                            <p>Karyawan Belum Punya Atasan</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card" style="margin-bottom:25px">
-                    <div class="card-header">
-                        <span class="card-title"><i class="fas fa-user-plus"></i> Assign Karyawan ke Atasan</span>
-                    </div>
-                    <form method="POST" style="padding:20px">
-                        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:15px;align-items:end">
-                            <div>
-                                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Pilih Atasan</label>
-                                <select name="atasan_id" class="form-control" required style="width:100%">
-                                    <option value="">-- Pilih Atasan --</option>
-                                    <?php 
-                                    $atasanList = getDaftarAtasan($conn);
-                                    while ($a = $atasanList->fetch_assoc()): 
-                                    ?>
-                                    <option value="<?= $a['id'] ?>">
-                                        <?= htmlspecialchars($a['nama']) ?> 
-                                        (<?= htmlspecialchars($a['nama_jabatan'] ?? '-') ?> - <?= htmlspecialchars($a['nama_divisi'] ?? '-') ?>)
-                                    </option>
-                                    <?php endwhile; ?>
-                                </select>
-                            </div>
-                            <div>
-                                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Pilih Karyawan</label>
-                                <select name="karyawan_id" class="form-control" required style="width:100%">
-                                    <option value="">-- Pilih Karyawan --</option>
-                                    <optgroup label="Karyawan Belum Punya Atasan">
-                                        <?php 
-                                        $karyawanFree = getKaryawanTanpaAtasan($conn);
-                                        while ($k = $karyawanFree->fetch_assoc()): 
-                                        ?>
-                                        <option value="<?= $k['id'] ?>">
-                                            <?= htmlspecialchars($k['nama']) ?> 
-                                            (<?= htmlspecialchars($k['nama_jabatan'] ?? '-') ?>)
-                                        </option>
-                                        <?php endwhile; ?>
-                                    </optgroup>
-                                    <optgroup label="Karyawan Sudah Punya Atasan (Pindah)">
-                                        <?php 
-                                        $karyawanAssigned = $conn->query("SELECT u.*, d.nama_divisi, j.nama_jabatan, a.nama as nama_atasan 
-                                            FROM users u 
-                                            LEFT JOIN divisi d ON u.divisi_id = d.id 
-                                            LEFT JOIN jabatan j ON u.jabatan_id = j.id 
-                                            LEFT JOIN users a ON u.atasan_id = a.id 
-                                            WHERE u.role = 'karyawan' AND u.status = 'aktif' AND u.atasan_id IS NOT NULL AND u.atasan_id > 0
-                                            ORDER BY u.nama ASC");
-                                        while ($k = $karyawanAssigned->fetch_assoc()): 
-                                        ?>
-                                        <option value="<?= $k['id'] ?>">
-                                            <?= htmlspecialchars($k['nama']) ?> 
-                                            (Saat ini: <?= htmlspecialchars($k['nama_atasan'] ?? '-') ?>)
-                                        </option>
-                                        <?php endwhile; ?>
-                                    </optgroup>
-                                </select>
-                            </div>
-                            <button type="submit" name="assign_karyawan" class="btn btn-primary" style="padding:10px 20px">
-                                <i class="fas fa-link"></i> Assign
-                            </button>
-                        </div>
-                    </form>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <span class="card-title"><i class="fas fa-sitemap"></i> Struktur Atasan & Karyawan</span>
-                        <div class="search-box">
-                            <i class="fas fa-search"></i>
-                            <input type="text" id="searchAtasan" placeholder="Cari atasan..." onkeyup="searchTable('searchAtasan', 'atasanTable')">
-                        </div>
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table" id="atasanTable">
-                            <thead>
-                                <tr>
-                                    <th>Atasan</th>
-                                    <th>Jabatan</th>
-                                    <th>Divisi</th>
-                                    <th>Karyawan Bawahan</th>
-                                    <th>Jumlah</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php
-                                $atasanList = getDaftarAtasan($conn);
-                                while ($atasan = $atasanList->fetch_assoc()):
-                                    $bawahan = getKaryawanByAtasanId($conn, $atasan['id']);
-                                    $jumlahBawahan = $bawahan->num_rows;
-                                    $bawahanNames = [];
-                                    while ($b = $bawahan->fetch_assoc()) {
-                                        $bawahanNames[] = $b['nama'];
-                                    }
-                                    $bawahan->data_seek(0);
-                                ?>
-                                <tr>
-                                    <td>
-                                        <div style="display:flex;align-items:center;gap:10px">
-                                            <img src="<?= $atasan['foto'] ?? 'https://via.placeholder.com/40' ?>" 
-                                                 style="width:40px;height:40px;border-radius:50%;object-fit:cover">
-                                            <div>
-                                                <strong><?= htmlspecialchars($atasan['nama']) ?></strong>
-                                                <div style="font-size:12px;color:#6b7280"><?= htmlspecialchars($atasan['email'] ?? '-') ?></div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td><?= htmlspecialchars($atasan['nama_jabatan'] ?? '-') ?></td>
-                                    <td><?= htmlspecialchars($atasan['nama_divisi'] ?? '-') ?></td>
-                                    <td>
-                                        <?php if ($jumlahBawahan > 0): ?>
-                                            <div style="display:flex;flex-wrap:wrap;gap:5px">
-                                                <?php while ($b = $bawahan->fetch_assoc()): ?>
-                                                <span style="background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:12px;font-size:12px;display:inline-flex;align-items:center;gap:5px">
-                                                    <img src="<?= $b['foto'] ?? 'https://via.placeholder.com/20' ?>" style="width:20px;height:20px;border-radius:50%;object-fit:cover">
-                                                    <?= htmlspecialchars($b['nama']) ?>
-                                                    <a href="?page=manajemen-atasan&hapus_bawahan=<?= $b['id'] ?>&atasan_id=<?= $atasan['id'] ?>" 
-                                                       style="color:#dc2626;text-decoration:none;margin-left:3px"
-                                                       onclick="return confirm('Hapus <?= htmlspecialchars($b['nama']) ?> dari daftar bawahan?')"
-                                                       title="Hapus">
-                                                        <i class="fas fa-times-circle"></i>
-                                                    </a>
-                                                </span>
-                                                <?php endwhile; ?>
-                                            </div>
-                                        <?php else: ?>
-                                            <span style="color:#9ca3af;font-size:13px"><i class="fas fa-exclamation-circle"></i> Belum ada karyawan</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <span class="badge badge-<?= $jumlahBawahan > 0 ? 'success' : 'warning' ?>">
-                                            <?= $jumlahBawahan ?> orang
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <button class="btn btn-primary btn-sm" onclick="openAssignModal(<?= $atasan['id'] ?>, '<?= htmlspecialchars($atasan['nama']) ?>')">
-                                            <i class="fas fa-plus"></i> Tambah
-                                        </button>
-                                    </td>
-                                </tr>
-                                <?php endwhile; ?>
-                                
-                                <?php if ($totalAtasanAktif == 0): ?>
-                                <tr>
-                                    <td colspan="6" style="text-align:center;padding:30px;color:#6b7280">
-                                        <i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>
-                                        Belum ada atasan yang aktif
-                                    </td>
-                                </tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div class="modal-overlay" id="assignModal">
-                    <div class="modal">
-                        <div class="modal-header">
-                            <h3><i class="fas fa-user-plus"></i> Tambah Karyawan ke <span id="modalAtasanName"></span></h3>
-                            <button class="modal-close" onclick="closeModal('assignModal')">&times;</button>
-                        </div>
-                        <form method="POST">
-                            <input type="hidden" name="atasan_id" id="modalAtasanId">
-                            <div class="modal-body">
-                                <div class="form-group">
-                                    <label>Pilih Karyawan</label>
-                                    <select name="karyawan_id" class="form-control" required>
-                                        <option value="">-- Pilih Karyawan --</option>
-                                        <?php 
-                                        $karyawanFree = getKaryawanTanpaAtasan($conn);
-                                        while ($k = $karyawanFree->fetch_assoc()): 
-                                        ?>
-                                        <option value="<?= $k['id'] ?>">
-                                            <?= htmlspecialchars($k['nama']) ?> (<?= htmlspecialchars($k['nama_jabatan'] ?? '-') ?>)
-                                        </option>
-                                        <?php endwhile; ?>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" onclick="closeModal('assignModal')">Batal</button>
-                                <button type="submit" name="assign_karyawan" class="btn btn-primary">
-                                    <i class="fas fa-save"></i> Simpan
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
-                <script>
-                function openAssignModal(atasanId, atasanName) {
-                    document.getElementById('modalAtasanId').value = atasanId;
-                    document.getElementById('modalAtasanName').textContent = atasanName;
-                    openModal('assignModal');
-                }
-                </script>
-
-            <!-- PAGE: KARYAWAN -->
             <?php elseif ($page == 'karyawan'): ?>
                 <h1 class="page-title">Data Seluruh Karyawan</h1>
                 <p class="page-subtitle">Informasi lengkap karyawan perusahaan</p>
@@ -1411,7 +1242,6 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                     </div>
                 </div>
 
-            <!-- PAGE: MONITORING -->
             <?php elseif ($page == 'monitoring'): ?>
                 <h1 class="page-title">Monitoring Sistem</h1>
                 <p class="page-subtitle">Pantau semua aktivitas dalam sistem</p>
@@ -1474,8 +1304,8 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                     </div>
                 </div>
 
-                                        <?php elseif ($page == 'manajemen-atasan'): ?>
-                <h1 class="page-title">Manajemen Hierarki</h1>
+            <?php elseif ($page == 'manajemen-atasan'): ?>
+                                <h1 class="page-title">Manajemen Hierarki</h1>
                 <p class="page-subtitle">Atur struktur organisasi berdasarkan parent_id</p>
 
                 <!-- Alert Messages -->
@@ -1507,21 +1337,21 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
 
                 <!-- Stats Hierarki -->
                 <div class="stats-grid" style="margin-bottom:20px">
-                    <div class="stat-card">
+                    <div class="stat-card" style="cursor:default">
                         <div class="stat-icon blue"><i class="fas fa-sitemap"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalAtasanAktif ?></h3>
                             <p>Atasan Aktif (Punya Bawahan)</p>
                         </div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card" style="cursor:default">
                         <div class="stat-icon green"><i class="fas fa-user-check"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalKaryawanDenganAtasan ?></h3>
                             <p>Karyawan Dengan Atasan</p>
                         </div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card" style="cursor:default">
                         <div class="stat-icon orange"><i class="fas fa-user-clock"></i></div>
                         <div class="stat-info">
                             <h3><?= $totalKaryawanTanpaAtasan ?></h3>
@@ -1671,7 +1501,7 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                             $sql = "
                                 SELECT u.id, u.nama, u.email, u.role, u.foto, u.status,
                                        d.nama_divisi, j.nama_jabatan,
-                                       (SELECT COUNT(*) FROM users WHERE parent_id = u.id) as jumlah_bawahan
+                                       (SELECT COUNT(*) FROM users WHERE parent_id = u.id AND status = 'aktif') as jumlah_bawahan
                                 FROM users u
                                 LEFT JOIN divisi d ON u.divisi_id = d.id
                                 LEFT JOIN jabatan j ON u.jabatan_id = j.id
@@ -1682,18 +1512,19 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
 
                             if ($result->num_rows == 0) return '';
 
-                            $html = '<div class="hierarchy-children" style="' . ($level == 0 ? 'margin-left:0;border-left:none;padding-left:0;' : '') . '">';
+                            $html = '';
 
                             while ($row = $result->fetch_assoc()) {
-                                $indent = $level * 30;
-                                $avatar = $row['foto'] && $row['foto'] != 'default.png' ? htmlspecialchars($row['foto']) : 'https://via.placeholder.com/40';
+                                $avatar = $row['foto'] && $row['foto'] != 'default.png' ? htmlspecialchars($row['foto']) : 'https://via.placeholder.com/44';
                                 $jabatanLabel = $row['nama_jabatan'] ?? 'Tanpa Jabatan';
                                 $divisiLabel = $row['nama_divisi'] ?? 'Tanpa Divisi';
                                 $roleBadge = $row['role'] == 'admin' ? 'admin' : ($row['role'] == 'atasan' ? 'warning' : 'primary');
                                 $roleText = ucfirst($row['role']);
 
+                                $html .= '<div class="hierarchy-branch">';
+
                                 $html .= '
-                                <div class="hierarchy-node" data-nama="' . strtolower(htmlspecialchars($row['nama'])) . '" style="margin-left:' . $indent . 'px">
+                                <div class="hierarchy-node" data-nama="' . strtolower(htmlspecialchars($row['nama'])) . '">
                                     <img src="' . $avatar . '" class="node-avatar" alt="' . htmlspecialchars($row['nama']) . '">
                                     <div class="node-info">
                                         <div class="node-name">' . htmlspecialchars($row['nama']) . '</div>
@@ -1708,10 +1539,14 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                                     </div>
                                 </div>';
 
-                                $html .= renderHierarchyTree($conn, $row['id'], $level + 1);
+                                $childrenHtml = renderHierarchyTree($conn, $row['id'], $level + 1);
+                                if ($childrenHtml) {
+                                    $html .= '<div class="hierarchy-children">' . $childrenHtml . '</div>';
+                                }
+
+                                $html .= '</div>';
                             }
 
-                            $html .= '</div>';
                             return $html;
                         }
 
@@ -1773,15 +1608,15 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                                             SELECT COUNT(*) as c FROM users WHERE parent_id = " . $h['atasan_id'] . " AND status = 'aktif'
                                         ")->fetch_assoc()['c'];
                                 ?>
-                                <tr>
+                                <tr class="hierarchy-row">
                                     <?php if ($isNewAtasan): ?>
-                                    <td rowspan="<?= $rowspan ?>" style="background:#f0fdf4;font-weight:600">
+                                    <td rowspan="<?= $rowspan ?>" style="font-weight:600">
                                         <i class="fas fa-user-tie" style="color:#059669"></i> <?= htmlspecialchars($h['nama_atasan']) ?>
                                     </td>
-                                    <td rowspan="<?= $rowspan ?>" style="background:#f0fdf4">
+                                    <td rowspan="<?= $rowspan ?>" >
                                         <?= htmlspecialchars($h['jabatan_atasan'] ?? '-') ?>
                                     </td>
-                                    <td rowspan="<?= $rowspan ?>" style="background:#f0fdf4">
+                                    <td rowspan="<?= $rowspan ?>" >
                                         <?= htmlspecialchars($h['divisi_atasan'] ?? '-') ?>
                                     </td>
                                     <?php endif; ?>
@@ -1873,7 +1708,7 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                             var parent = node.parentElement;
                             while (parent) {
                                 if (parent.classList && parent.classList.contains('hierarchy-children')) {
-                                    parent.style.display = 'block';
+                                    parent.style.display = 'flex';
                                 }
                                 parent = parent.parentElement;
                             }
@@ -1885,6 +1720,9 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                     if (filter === '') {
                         nodes.forEach(function(node) {
                             node.style.display = 'flex';
+                        });
+                        document.querySelectorAll('.hierarchy-children').forEach(function(c) {
+                            c.style.display = 'flex';
                         });
                     }
                 }
@@ -2110,8 +1948,8 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                 }
                 </script>
 
-            <?php elseif ($page == 'pengumuman'): ?>
-                <h1 class="page-title">Manajemen Pengumuman</h1>
+<?php elseif ($page == 'pengumuman'): ?>
+                    <h1 class="page-title">Manajemen Pengumuman</h1>
                 <p class="page-subtitle">Buat dan kelola pengumuman untuk seluruh karyawan</p>
 
                 <?php
@@ -2437,8 +2275,8 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                 }
                 </script>
 
-            <?php elseif ($page == 'profile'): ?>
-                <h1 class="page-title">Profile Admin</h1>
+<?php elseif ($page == 'profile'): ?>
+                    <h1 class="page-title">Profile Admin</h1>
                 <p class="page-subtitle">Kelola informasi akun administrator Anda</p>
 
                 <?php if ($profileMsg): ?>
@@ -2576,321 +2414,12 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                         </button>
                     </form>
                 </div>
-
-            <!-- PAGE: PENGUMUMAN -->
-            <?php elseif ($page == 'pengumuman'): ?>
-                <h1 class="page-title">Pengumuman</h1>
-                <p class="page-subtitle">Kelola pengumuman untuk seluruh karyawan atau divisi tertentu</p>
-
-                <?php if (isset($_GET['success'])): ?>
-                    <div style="background:#d1fae5;color:#065f46;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #10b981">
-                        <i class="fas fa-check-circle"></i> 
-                        <?php 
-                        switch($_GET['success']) {
-                            case 'added': echo 'Pengumuman berhasil ditambahkan!'; break;
-                            case 'updated': echo 'Pengumuman berhasil diperbarui!'; break;
-                            case 'deleted': echo 'Pengumuman berhasil dihapus!'; break;
-                            default: echo 'Operasi berhasil!';
-                        }
-                        ?>
-                    </div>
-                <?php endif; ?>
-                <?php if (isset($_GET['error'])): ?>
-                    <div style="background:#fee2e2;color:#991b1b;padding:12px 16px;border-radius:10px;margin-bottom:20px;border-left:4px solid #ef4444">
-                        <i class="fas fa-exclamation-circle"></i> <?= $_GET['error'] == 'unauthorized' ? 'Anda tidak memiliki akses!' : 'Terjadi kesalahan!' ?>
-                    </div>
-                <?php endif; ?>
-
-                <div class="stats-grid" style="margin-bottom:20px">
-                    <div class="stat-card">
-                        <div class="stat-icon blue"><i class="fas fa-bullhorn"></i></div>
-                        <div class="stat-info">
-                            <h3><?= $pengumumanList->num_rows ?></h3>
-                            <p>Total Pengumuman</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon green"><i class="fas fa-globe"></i></div>
-                        <div class="stat-info">
-                            <h3><?= $conn->query("SELECT COUNT(*) as c FROM pengumuman WHERE tipe_target='semua'")->fetch_assoc()['c'] ?></h3>
-                            <p>Untuk Semua</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon orange"><i class="fas fa-building"></i></div>
-                        <div class="stat-info">
-                            <h3><?= $conn->query("SELECT COUNT(*) as c FROM pengumuman WHERE tipe_target='divisi'")->fetch_assoc()['c'] ?></h3>
-                            <p>Per Divisi</p>
-                        </div>
-                    </div>
-                </div>
-
-                <button class="btn btn-primary" onclick="openModal('addPengumumanModal')" style="margin-bottom:20px">
-                    <i class="fas fa-plus"></i> Buat Pengumuman Baru
-                </button>
-
-                <div class="card">
-                    <div class="card-header">
-                        <span class="card-title"><i class="fas fa-list"></i> Daftar Pengumuman</span>
-                        <div class="search-box">
-                            <i class="fas fa-search"></i>
-                            <input type="text" id="searchPengumuman" placeholder="Cari pengumuman..." onkeyup="searchTable('searchPengumuman', 'pengumumanTable')">
-                        </div>
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table" id="pengumumanTable">
-                            <thead>
-                                <tr>
-                                    <th>Judul</th>
-                                    <th>Target</th>
-                                    <th>Tanggal</th>
-                                    <th>Kadaluarsa</th>
-                                    <th>Dibaca</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php 
-                                $pengumumanList->data_seek(0);
-                                while ($row = $pengumumanList->fetch_assoc()): 
-                                    $targetLabel = $row['tipe_target'] == 'semua' 
-                                        ? '<span class="badge badge-primary"><i class="fas fa-globe"></i> Semua Karyawan</span>' 
-                                        : '<span class="badge badge-warning"><i class="fas fa-building"></i> ' . htmlspecialchars($row['nama_divisi']) . '</span>';
-                                    
-                                    $isExpired = $row['tanggal_kadaluarsa'] && strtotime($row['tanggal_kadaluarsa']) < strtotime(date('Y-m-d'));
-                                ?>
-                                <tr>
-                                    <td>
-                                        <strong><?= htmlspecialchars($row['judul']) ?></strong>
-                                        <div style="font-size:12px;color:#6b7280;margin-top:4px">
-                                            Oleh: <?= htmlspecialchars($row['pengirim']) ?>
-                                        </div>
-                                    </td>
-                                    <td><?= $targetLabel ?></td>
-                                    <td><?= date('d/m/Y H:i', strtotime($row['created_at'])) ?></td>
-                                    <td>
-                                        <?php if ($row['tanggal_kadaluarsa']): ?>
-                                            <span class="badge badge-<?= $isExpired ? 'danger' : 'info' ?>">
-                                                <?= date('d/m/Y', strtotime($row['tanggal_kadaluarsa'])) ?>
-                                                <?= $isExpired ? ' (Expired)' : '' ?>
-                                            </span>
-                                        <?php else: ?>
-                                            <span class="badge badge-secondary">Tidak ada</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <span class="badge badge-success">
-                                            <i class="fas fa-eye"></i> <?= $row['read_count'] ?>x dibaca
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <button class="btn btn-info btn-sm" onclick="viewPengumumanDetail(<?= $row['id'] ?>)" title="Lihat Detail">
-                                            <i class="fas fa-eye"></i>
-                                        </button>
-                                        <button class="btn btn-warning btn-sm" onclick="editPengumuman(<?= htmlspecialchars(json_encode($row)) ?>)" title="Edit">
-                                            <i class="fas fa-edit"></i>
-                                        </button>
-                                        <a href="?page=pengumuman&hapus_pengumuman=<?= $row['id'] ?>" 
-                                           class="btn btn-danger btn-sm" 
-                                           onclick="return confirm('Yakin hapus pengumuman ini?')"
-                                           title="Hapus">
-                                            <i class="fas fa-trash"></i>
-                                        </a>
-                                    </td>
-                                </tr>
-                                <?php endwhile; ?>
-                                <?php if ($pengumumanList->num_rows == 0): ?>
-                                <tr>
-                                    <td colspan="6" style="text-align:center;padding:40px;color:#6b7280">
-                                        <i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>
-                                        Belum ada pengumuman
-                                    </td>
-                                </tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- MODAL: Tambah Pengumuman -->
-                <div class="modal-overlay" id="addPengumumanModal">
-                    <div class="modal" style="max-width:700px">
-                        <div class="modal-header">
-                            <h3><i class="fas fa-plus-circle"></i> Buat Pengumuman Baru</h3>
-                            <button class="modal-close" onclick="closeModal('addPengumumanModal')">&times;</button>
-                        </div>
-                        <form method="POST" enctype="multipart/form-data" onsubmit="return validateForm('addPengumumanForm')" id="addPengumumanForm">
-                            <div class="modal-body">
-                                <div class="form-group">
-                                    <label>Judul Pengumuman</label>
-                                    <input type="text" name="judul" class="form-control" required placeholder="Masukkan judul...">
-                                </div>
-                                <div class="form-group">
-                                    <label>Isi Pengumuman</label>
-                                    <textarea name="isi" class="form-control" rows="6" required placeholder="Tulis isi pengumuman..."></textarea>
-                                </div>
-                                <div class="form-group">
-                                    <label>Target Pengumuman</label>
-                                    <select name="tipe_target" id="tipeTarget" class="form-control" required onchange="toggleDivisiSelect()">
-                                        <option value="semua">Seluruh Karyawan</option>
-                                        <option value="divisi">Divisi Tertentu</option>
-                                    </select>
-                                </div>
-                                <div class="form-group" id="divisiSelectGroup" style="display:none">
-                                    <label>Pilih Divisi</label>
-                                    <select name="divisi_id" class="form-control">
-                                        <option value="">-- Pilih Divisi --</option>
-                                        <?php 
-                                        $divisiList->data_seek(0);
-                                        while ($d = $divisiList->fetch_assoc()): 
-                                        ?>
-                                        <option value="<?= $d['id'] ?>"><?= htmlspecialchars($d['nama_divisi']) ?></option>
-                                        <?php endwhile; ?>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Tanggal Kadaluarsa (Opsional)</label>
-                                    <input type="date" name="tanggal_kadaluarsa" class="form-control">
-                                    <small style="color:#6b7280">Pengumuman akan otomatis hilang setelah tanggal ini</small>
-                                </div>
-                                <div class="form-group">
-                                    <label>Lampiran File (Opsional)</label>
-                                    <input type="file" name="file_lampiran" class="form-control" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <small style="color:#6b7280">Max 5MB. PDF, Word, atau Gambar</small>
-                                </div>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" onclick="closeModal('addPengumumanModal')">Batal</button>
-                                <button type="submit" name="tambah_pengumuman" class="btn btn-primary">
-                                    <i class="fas fa-paper-plane"></i> Kirim Pengumuman
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- MODAL: Edit Pengumuman -->
-                <div class="modal-overlay" id="editPengumumanModal">
-                    <div class="modal" style="max-width:700px">
-                        <div class="modal-header">
-                            <h3><i class="fas fa-edit"></i> Edit Pengumuman</h3>
-                            <button class="modal-close" onclick="closeModal('editPengumumanModal')">&times;</button>
-                        </div>
-                        <form method="POST" enctype="multipart/form-data" id="editPengumumanForm">
-                            <input type="hidden" name="pengumuman_id" id="editPengumumanId">
-                            <div class="modal-body">
-                                <div class="form-group">
-                                    <label>Judul Pengumuman</label>
-                                    <input type="text" name="judul" id="editPengumumanJudul" class="form-control" required>
-                                </div>
-                                <div class="form-group">
-                                    <label>Isi Pengumuman</label>
-                                    <textarea name="isi" id="editPengumumanIsi" class="form-control" rows="6" required></textarea>
-                                </div>
-                                <div class="form-group">
-                                    <label>Target Pengumuman</label>
-                                    <select name="tipe_target" id="editTipeTarget" class="form-control" required onchange="toggleEditDivisiSelect()">
-                                        <option value="semua">Seluruh Karyawan</option>
-                                        <option value="divisi">Divisi Tertentu</option>
-                                    </select>
-                                </div>
-                                <div class="form-group" id="editDivisiSelectGroup" style="display:none">
-                                    <label>Pilih Divisi</label>
-                                    <select name="divisi_id" id="editDivisiId" class="form-control">
-                                        <option value="">-- Pilih Divisi --</option>
-                                        <?php 
-                                        $divisiList->data_seek(0);
-                                        while ($d = $divisiList->fetch_assoc()): 
-                                        ?>
-                                        <option value="<?= $d['id'] ?>"><?= htmlspecialchars($d['nama_divisi']) ?></option>
-                                        <?php endwhile; ?>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Tanggal Kadaluarsa (Opsional)</label>
-                                    <input type="date" name="tanggal_kadaluarsa" id="editTanggalKadaluarsa" class="form-control">
-                                </div>
-                                <div class="form-group">
-                                    <label>Lampiran File (Opsional)</label>
-                                    <input type="file" name="file_lampiran" class="form-control" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <div id="editFileLampiran" style="margin-top:8px;font-size:13px;color:#6b7280"></div>
-                                </div>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" onclick="closeModal('editPengumumanModal')">Batal</button>
-                                <button type="submit" name="edit_pengumuman" class="btn btn-primary">
-                                    <i class="fas fa-save"></i> Simpan Perubahan
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- MODAL: Detail Pengumuman -->
-                <div class="modal-overlay" id="detailPengumumanModal">
-                    <div class="modal" style="max-width:800px">
-                        <div class="modal-header">
-                            <h3><i class="fas fa-info-circle"></i> Detail Pengumuman</h3>
-                            <button class="modal-close" onclick="closeModal('detailPengumumanModal')">&times;</button>
-                        </div>
-                        <div class="modal-body" id="detailPengumumanContent">
-                            <!-- Diisi via AJAX -->
-                        </div>
-                    </div>
-                </div>
-
-                <script>
-                function toggleDivisiSelect() {
-                    const tipe = document.getElementById('tipeTarget').value;
-                    document.getElementById('divisiSelectGroup').style.display = tipe === 'divisi' ? 'block' : 'none';
-                }
-                
-                function toggleEditDivisiSelect() {
-                    const tipe = document.getElementById('editTipeTarget').value;
-                    document.getElementById('editDivisiSelectGroup').style.display = tipe === 'divisi' ? 'block' : 'none';
-                }
-                
-                function editPengumuman(data) {
-                    document.getElementById('editPengumumanId').value = data.id;
-                    document.getElementById('editPengumumanJudul').value = data.judul;
-                    document.getElementById('editPengumumanIsi').value = data.isi;
-                    document.getElementById('editTipeTarget').value = data.tipe_target;
-                    document.getElementById('editTanggalKadaluarsa').value = data.tanggal_kadaluarsa || '';
-                    
-                    if (data.tipe_target === 'divisi') {
-                        document.getElementById('editDivisiSelectGroup').style.display = 'block';
-                        document.getElementById('editDivisiId').value = data.divisi_id || '';
-                    } else {
-                        document.getElementById('editDivisiSelectGroup').style.display = 'none';
-                    }
-                    
-                    if (data.file_lampiran) {
-                        document.getElementById('editFileLampiran').innerHTML = 
-                            '<i class="fas fa-paperclip"></i> File saat ini: <a href="' + data.file_lampiran + '" target="_blank">' + data.file_lampiran.split('/').pop() + '</a>';
-                    } else {
-                        document.getElementById('editFileLampiran').innerHTML = 'Tidak ada file lampiran';
-                    }
-                    
-                    openModal('editPengumumanModal');
-                }
-                
-                function viewPengumumanDetail(id) {
-                    fetch('ajax_pengumuman_detail.php?id=' + id)
-                        .then(response => response.text())
-                        .then(html => {
-                            document.getElementById('detailPengumumanContent').innerHTML = html;
-                            openModal('detailPengumumanModal');
-                        });
-                }
-                </script>
-
             <?php endif; ?>
-            <!-- END CONTENT PAGES -->
         </div>
     </div>
-        <!-- MODALS (Shared across pages) -->
-
+        <!-- ============================================ -->
     <!-- ADD USER MODAL -->
+    <!-- ============================================ -->
     <div class="modal-overlay" id="addUserModal">
         <div class="modal">
             <div class="modal-header">
@@ -2985,6 +2514,7 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                         <label>Email</label>
                         <input type="email" name="email" id="editEmail" class="form-control">
                     </div>
+
                     <div class="form-group">
                         <label><i class="fas fa-lock"></i> Password Baru <small style="color:#6b7280;font-weight:400">(Kosongkan jika tidak diubah)</small></label>
                         <div class="input-group">
@@ -2993,6 +2523,7 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
                         </div>
                         <small style="color:#6b7280;font-size:11px">Minimal 6 karakter</small>
                     </div>
+
                     <div class="form-group" id="confirmPassGroup" style="display:none">
                         <label><i class="fas fa-lock"></i> Konfirmasi Password Baru</label>
                         <div class="input-group">
@@ -3052,7 +2583,9 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
         </div>
     </div>
 
+    <!-- ============================================ -->
     <!-- NOTIF MODAL -->
+    <!-- ============================================ -->
     <div class="modal-overlay" id="notifModal">
         <div class="modal">
             <div class="modal-header">
@@ -3078,7 +2611,9 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
         </div>
     </div>
 
+    <!-- ============================================ -->
     <!-- JAVASCRIPT -->
+    <!-- ============================================ -->
     <script src="js/script.js"></script>
     <script>
         function togglePassword(inputId, iconId) {
@@ -3101,6 +2636,7 @@ function generateLaporanHTML($data, $periode, $karyawan, $status, $total, $hadir
             const confirmInput = document.getElementById('editConfirmPassword');
             const msg = document.getElementById('passMatchMsg');
             const btnUpdate = document.getElementById('btnUpdateUser');
+
             if (password.length > 0) {
                 confirmGroup.style.display = 'block';
                 if (confirmInput.value.length > 0) {
